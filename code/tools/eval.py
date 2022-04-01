@@ -30,8 +30,8 @@ if __name__ == "__main__":
     cfg_train = cfg['trainer']
     logger = create_logger(os.path.join(cfg_train['log_dir'],'train.log'))    
 
-    gt_label_path = "../datasets/KITTI/training/label_2/"
-    imageset_txt = "../datasets/KITTI/ImageSets/val.txt"
+    gt_label_path = "../datasets/Rope3D/validation/label_2/"
+    imageset_txt = "../datasets/Rope3D/validation/val.txt"
     pred_label_path = os.path.join('./outputs', 'data')
     os.makedirs(pred_label_path, exist_ok=True)
 
@@ -39,8 +39,8 @@ if __name__ == "__main__":
     os.makedirs(evaluation_path, exist_ok=True)
 
     checkpoint_path = os.path.join(cfg_train['output_dir'], 'checkpoints')
-    train_loader, val_loader, test_loader = build_dataloader(cfg['dataset'])
-    model = build_model(cfg['model'],train_loader.dataset.cls_mean_size)
+    train_loader, val_loader = build_dataloader(cfg['dataset'])
+    model = build_model(cfg['model'], train_loader.dataset.cls_mean_size)
 
     best_mAP_3d_moderate = 0
     for pth_name in os.listdir(checkpoint_path):

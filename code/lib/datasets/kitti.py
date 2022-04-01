@@ -36,7 +36,7 @@ class KITTI(data.Dataset):
          'Pedestrian': np.array([0.84422524,0.66068622,1.76255119]),
          'Cyclist': np.array([1.76282397,0.59706367,1.73698127])] 
         ''' 
-        ##l,w,h
+        ##l,w,h  ---> h w l
         self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
                                        [1.52563191462 ,1.62856739989, 3.88311640418],
                                        [1.73698127    ,0.59706367   , 1.76282397   ]])                              
@@ -83,7 +83,6 @@ class KITTI(data.Dataset):
         calib_file = os.path.join(self.calib_dir, '%06d.txt' % idx)
         assert os.path.exists(calib_file)
         return Calibration(calib_file)
-
 
     def __len__(self):
         return self.idx_list.__len__()

@@ -1,6 +1,5 @@
 code/outputs/
 code/log/
-datasets/
 __pycache__/
 *.out
 *.pyc
