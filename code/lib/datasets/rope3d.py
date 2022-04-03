@@ -1,4 +1,5 @@
 import os
+import math
 
 import numpy as np
 import torch
@@ -16,6 +17,14 @@ from lib.datasets.rope3d_utils import Calibration
 from lib.datasets.rope3d_utils import get_affine_transform
 from lib.datasets.rope3d_utils import affine_transform
 from lib.datasets.rope3d_utils import *
+
+def save_to_file(name, items):
+  with open(name, 'w') as outputs:
+    for idx, item in enumerate(items):
+        outputs.write(str(idx) + " ### ")
+        outputs.write(str(item))
+        outputs.write('\n')
+    outputs.flush()
 
 class Rope3D(data.Dataset):
     def __init__(self, root_dir, split, cfg):
@@ -45,12 +54,12 @@ class Rope3D(data.Dataset):
         assert split in ['train', 'val']
         self.split = split
         self.root_dir = root_dir
-
         # path configuration
         self.data_dir = os.path.join(self.root_dir, 'training' if split == 'train' else 'validation')
         self.split_txt = os.path.join(self.root_dir, 'training/train.txt' if split == 'train' else 'validation/val.txt')
         self.calib_dir = os.path.join(self.data_dir, "calib")
         self.label_dir = os.path.join(self.data_dir, "label_2")
+        self.denorm_dir = os.path.join(self.data_dir, "denorm")
         self.extrinsics_dir = os.path.join(self.data_dir, "extrinsics")
         self.image_dir = os.path.join(self.root_dir, 
             "training-image_2a_6978886144233472/training-image_2a" if split == 'train' else 
@@ -78,7 +87,7 @@ class Rope3D(data.Dataset):
         self.downsample = 4
 
     def __len__(self):
-        return len(self.idx_list[:30])
+        return len(self.idx_list[:50])
 
     def get_image(self, index):
         img_file = os.path.join(self.image_dir, index + ".jpg")
@@ -97,9 +106,18 @@ class Rope3D(data.Dataset):
         assert os.path.exists(label_file)
         return get_objects_from_label(label_file)
 
+    def get_denorm(self, index):
+        denorm_file = os.path.join(self.denorm_dir, index + ".txt")
+        assert os.path.exists(denorm_file)
+        with open(denorm_file, 'r') as f:
+            lines = f.readlines()
+        denorm = np.array([float(item) for item in lines[0].split(' ')])
+        return denorm
+
     def __getitem__(self, idx):
         #  ============================   get inputs   ===========================
         index = self.idx_list[idx]
+        denorm = self.get_denorm(index)
         # img_proto = self.get_image(index)
         # img = img_proto.copy()
         img = self.get_image(index)
@@ -183,7 +201,9 @@ class Rope3D(data.Dataset):
     
                 # process 3d bbox & get 3d center
                 center_2d = np.array([(bbox_2d[0] + bbox_2d[2]) / 2, (bbox_2d[1] + bbox_2d[3]) / 2], dtype=np.float32)  # W * H
-                center_3d = objects[i].pos + [0, -objects[i].h / 2, 0]  # real 3D center in 3D space
+                # center_3d_ = objects[i].pos + [0, -objects[i].h / 2, 0]  
+                center_3d, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
+
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
@@ -216,7 +236,6 @@ class Rope3D(data.Dataset):
                 # encoding depth
                 depth[i] = objects[i].pos[-1]
                 # encoding heading angle
-                #heading_angle = objects[i].alpha
                 heading_angle = calib.ry2alpha(objects[i].ry, (objects[i].box2d[0]+objects[i].box2d[2])/2)
                 if heading_angle > np.pi:  heading_angle -= 2 * np.pi  # check range
                 if heading_angle < -np.pi: heading_angle += 2 * np.pi
@@ -227,7 +246,7 @@ class Rope3D(data.Dataset):
                 src_size_3d[i] = np.array([objects[i].h, objects[i].w, objects[i].l], dtype=np.float32)
                 mean_size = self.cls_mean_size[self.cls2id[objects[i].cls_type]]
                 size_3d[i] = src_size_3d[i] - mean_size
-                if objects[i].trucation <=0.5 and objects[i].occlusion<=2:    
+                if objects[i].trucation <= 0.5 and objects[i].occlusion<=2:    
                     mask_2d[i] = 1
            
             targets = {'depth': depth,
@@ -246,6 +265,7 @@ class Rope3D(data.Dataset):
         inputs = img
         info = {'img_id': index,
                 'img_size': img_size,
+                'denorm': denorm,
                 'bbox_downsample_ratio': img_size / features_size}   
         return inputs, calib.P2, coord_range, targets, info   # for training
         # return img_proto, calib, coord_range, objects, info     # for debug
@@ -262,7 +282,7 @@ if __name__ == '__main__':
         for obj in objs:
             if np.sum(obj.pos) == 0:
                 continue
-            corners3d = obj.generate_corners3d()
+            center3d, corners3d = obj.generate_corners3d_denorm(info['denorm'])
             pts_img, pts_depth = calib.rect_to_img(corners3d)
             obj_c = np.mean(pts_img, axis=0)
             box2d = obj.box2d
@@ -270,6 +290,8 @@ if __name__ == '__main__':
             cv2.circle(demo_img, (int(obj_c[0]), int(obj_c[1])), 6, (0, 255, 0), thickness=-1)
             cv2.rectangle(demo_img, (int(box2d[0]), int(box2d[1])), (int(box2d[2]), int(box2d[3])), (0, 255, 0))
         cv2.imwrite(os.path.join("debug", str(i) + ".jpg"), demo_img)
+
+
 
 
 '''

@@ -1,6 +1,7 @@
 import cv2
 import pdb
 import yaml
+import math
 
 import numpy as np
 
@@ -339,6 +340,37 @@ class Object3d(object):
         corners3d = np.dot(R, corners3d).T
         corners3d = corners3d + self.pos
         return corners3d
+    
+    def generate_corners3d_denorm(self, denorm):
+        """
+        generate corners3d representation for this object
+        :return corners_3d: (8, 3) corners of box3d in camera coord
+        """
+        l, h, w = self.l, self.h, self.w
+        x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
+        y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
+        z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
+
+        corners3d = np.vstack([x_corners, y_corners, z_corners])  # (3, 8)
+        R = np.array([[np.cos(self.ry), 0, np.sin(self.ry)],
+                      [0, 1, 0],
+                      [-np.sin(self.ry), 0, np.cos(self.ry)]])
+        corners3d = np.dot(R, corners3d)
+
+        # ground palne equation
+        denorm = denorm[:3]
+        denorm_norm = denorm / np.sqrt(denorm[0]**2 + denorm[1]**2 + denorm[2]**2)
+        ori_denorm = np.array([0.0, -1.0, 0.0])
+        theta = -1 * math.acos(np.dot(denorm_norm, ori_denorm))
+        n_vector = np.cross(denorm, ori_denorm)
+        n_vector_norm = n_vector / np.sqrt(n_vector[0]**2 + n_vector[1]**2 + n_vector[2]**2)
+        rotation_matrix, j = cv2.Rodrigues(theta * n_vector_norm)
+        corners3d = np.dot(rotation_matrix, corners3d)
+        corners3d = corners3d.T + self.pos
+
+        center3d = np.mean(corners3d, axis=0)
+        return center3d, corners3d
+
 
     def generate_corners3d_lidar(self):
         c, s = np.cos(self.ry), np.sin(self.ry)

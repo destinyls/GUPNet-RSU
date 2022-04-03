@@ -13,6 +13,17 @@ from lib.helpers.decode_helper import extract_dets_from_outputs
 from lib.helpers.decode_helper import decode_detections
 from lib.evaluation import evaluate_python
 
+import gc
+import objgraph
+
+def save_to_file(name, items):
+  with open(name, 'w') as outputs:
+    for idx, item in enumerate(items):
+        outputs.write(str(idx) + " ### ")
+        outputs.write(str(item))
+        outputs.write('\n')
+    outputs.flush()
+
 class Trainer(object):
     def __init__(self,
                  cfg,
@@ -43,7 +54,6 @@ class Trainer(object):
 
         self.model = torch.nn.DataParallel(model).to(self.device)
 
-
     def train(self):
         start_epoch = self.epoch
         ei_loss = self.compute_e0_loss()
@@ -66,7 +76,7 @@ class Trainer(object):
             self.logger.info(log_str)                     
             ei_loss = self.train_one_epoch(loss_weights)
             self.epoch += 1
-            
+
             # update learning rate
             if self.warmup_lr_scheduler is not None and self.epoch < 5:
                 self.warmup_lr_scheduler.step()
@@ -117,7 +127,7 @@ class Trainer(object):
         self.model.train()
         disp_dict = {}
         stat_dict = {}
-        for batch_idx, (inputs,calibs,coord_ranges, targets, info) in enumerate(self.train_loader):
+        for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.train_loader):
             inputs = inputs.to(self.device)
             calibs = calibs.to(self.device)
             coord_ranges = coord_ranges.to(self.device)
@@ -154,7 +164,7 @@ class Trainer(object):
                     log_str += ' %s:%.4f,' %(key, disp_dict[key])
                     disp_dict[key] = 0  # reset statistics
                 self.logger.info(log_str)
-                
+            
         for key in stat_dict.keys():
             stat_dict[key] /= trained_batch
                             
@@ -173,9 +183,9 @@ class Trainer(object):
                 coord_ranges = coord_ranges.to(self.device)
     
                 # the outputs of centernet
-                outputs = self.model(inputs,coord_ranges,calibs,K=50,mode='val')
+                outputs = self.model(inputs,coord_ranges,calibs,K=300,mode='val')
 
-                dets = extract_dets_from_outputs(outputs, K=50)
+                dets = extract_dets_from_outputs(outputs, K=300)
                 dets = dets.detach().cpu().numpy()
                 
                 # get corresponding calibs & transform tensor to numpy
@@ -201,7 +211,7 @@ class Trainer(object):
         result, ret_dict = evaluate_python(label_path=gt_label_path, 
                                             result_path=pred_label_path,
                                             label_split_file=imageset_txt,
-                                            current_class=["Car", "Pedestrian", "Cyclist"],
+                                            current_class=['car', 'van', 'truck', 'bus', 'pedestrian', 'cyclist', 'motorcyclist', 'tricyclist'],
                                             metric='R40')
         mAP_3d_moderate = ret_dict['Car_3d_0.70/moderate']
         with open(os.path.join(evaluation_path, 'epoch_result_' + '{:07d}_{}.txt'.format(epoch, round(mAP_3d_moderate, 2))), "w") as f:
