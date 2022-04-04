@@ -9,7 +9,7 @@ import csv
 def _read_imageset_file(path):
     with open(path, 'r') as f:
         lines = f.readlines()
-    return [int(line) for line in lines]
+    return [line.strip() for line in lines]
 
 def evaluate(label_path,
              result_path,
@@ -21,7 +21,8 @@ def evaluate(label_path,
     
     from .eval import get_coco_eval_result, get_official_eval_result
     
-    dt_annos = kitti.get_label_annos(result_path)
+    val_image_ids = _read_imageset_file(label_split_file)
+    dt_annos = kitti.get_label_annos(result_path, val_image_ids)
     if score_thresh > 0:
         dt_annos = kitti.filter_annos_low_score(dt_annos, score_thresh)
     val_image_ids = _read_imageset_file(label_split_file)
@@ -34,9 +35,9 @@ def evaluate(label_path,
 def generate_kitti_3d_detection(prediction, predict_txt):
 
     ID_TYPE_CONVERSION = {
-        0: 'Car',
-        1: 'Pedestrian',
-        2: 'Cyclist',
+        0: 'car',
+        1: 'pedestrian',
+        2: 'cyclist',
     }
 
     with open(predict_txt, 'w', newline='') as f:

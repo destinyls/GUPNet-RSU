@@ -652,12 +652,12 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
 
     min_overlaps = np.stack([overlap_0_7, overlap_0_5], axis=0)  # [2, 3, num_classes]
     class_to_name = {
-        0: 'Car',
-        1: 'Pedestrian',
-        2: 'Cyclist',
-        3: 'Van',
-        4: 'Person_sitting',
-        5: 'Truck'
+        0: 'car',
+        1: 'pedestrian',
+        2: 'cyclist',
+        3: 'van',
+        4: 'person_sitting',
+        5: 'truck'
     }
 
     name_to_class = {v: n for n, v in class_to_name.items()}
@@ -728,11 +728,11 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
 
 def get_coco_eval_result(gt_annos, dt_annos, current_classes):
     class_to_name = {
-        0: 'Car',
-        1: 'Pedestrian',
-        2: 'Cyclist',
-        3: 'Van',
-        4: 'Person_sitting',
+        0: 'car',
+        1: 'pedestrian',
+        2: 'cyclist',
+        3: 'van',
+        4: 'person_sitting',
     }
     class_to_range = {
         0: [0.5, 0.95, 10],

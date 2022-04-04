@@ -2,12 +2,12 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../datasets'
-  batch_size: 16
+  root_dir: '../datasets/Rope3D'
+  batch_size: 2
   class_merging: False
   use_dontcare: False
   use_3d_center: True
-  writelist: ['Car','Pedestrian','Cyclist']
+  writelist: ['car','pedestrian','cyclist']
   random_flip: 0.5
   random_crop: 0.5
   scale: 0.4
@@ -29,8 +29,8 @@ lr_scheduler:
   decay_list: [90, 120]
 
 trainer:
-  max_epoch: 200
-  eval_frequency: 1000 # evaluation interval (in epoch)
+  max_epoch: 20
+  eval_frequency: 1 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   log_dir: 'log'

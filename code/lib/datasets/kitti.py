@@ -1,4 +1,6 @@
+from ast import Break
 import os
+import cv2
 import numpy as np
 import torch
 import torch.utils.data as data
@@ -9,53 +11,58 @@ import matplotlib.pyplot as plt
 from lib.datasets.utils import angle2class
 from lib.datasets.utils import gaussian_radius
 from lib.datasets.utils import draw_umich_gaussian
-from lib.datasets.utils import get_angle_from_box3d,check_range
+from lib.datasets.utils import get_angle_from_box3d, check_range
 from lib.datasets.kitti_utils import get_objects_from_label
 from lib.datasets.kitti_utils import Calibration
 from lib.datasets.kitti_utils import get_affine_transform
 from lib.datasets.kitti_utils import affine_transform
-from lib.datasets.kitti_utils import compute_box_3d
+from lib.datasets.kitti_utils import compute_box_3d, draw_box_3d
 import pdb
 
 class KITTI(data.Dataset):
     def __init__(self, root_dir, split, cfg):
         # basic configuration
         self.num_classes = 3
-        self.max_objs = 50
-        self.class_name = ['Pedestrian', 'Car', 'Cyclist']
-        self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
-        self.resolution = np.array([1280, 384])  # W * H
+        self.max_objs = 250
+        self.class_name = ['pedestrian', 'car', 'cyclist']
+        self.cls2id = {'pedestrian': 0, 'car': 1, 'cyclist': 2}
+        
+        self.resolution = np.array([1920, 1056])  # W * H
         self.use_3d_center = cfg['use_3d_center']
         self.writelist = cfg['writelist']
         if cfg['class_merging']:
-            self.writelist.extend(['Van', 'Truck'])
+            self.writelist.extend(['van', 'truck'])
         if cfg['use_dontcare']:
             self.writelist.extend(['DontCare'])
-        '''    
-        ['Car': np.array([3.88311640418,1.62856739989,1.52563191462]),
-         'Pedestrian': np.array([0.84422524,0.66068622,1.76255119]),
-         'Cyclist': np.array([1.76282397,0.59706367,1.73698127])] 
-        ''' 
-        ##l,w,h
-        self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
-                                       [1.52563191462 ,1.62856739989, 3.88311640418],
-                                       [1.73698127    ,0.59706367   , 1.76282397   ]])                              
-                              
-        # data split loading
-        assert split in ['train', 'val', 'trainval', 'test']
-        self.split = split
-        split_dir = os.path.join(root_dir, 'KITTI', 'ImageSets', split + '.txt')
-        self.idx_list = [x.strip() for x in open(split_dir).readlines()]
 
-        # path configuration
-        self.data_dir = os.path.join(root_dir, 'KITTI', 'testing' if split == 'test' else 'training')
-        self.image_dir = os.path.join(self.data_dir, 'image_2')
+        ##l,w,h
+        self.cls_mean_size = np.array([[1.59624921, 0.47972058, 0.46641969],
+                                       [1.28877281, 1.69392866, 4.25668836],
+                                       [1.4376054,  0.48926293, 1.5239355 ]])                                            
+        # data split loading
+        assert split in ['train', 'val']
+        self.split = split
+        self.root_dir = root_dir
+        self.data_dir = os.path.join(self.root_dir, 'training' if split == 'train' else 'validation')
+        self.split_txt = os.path.join(self.root_dir, 'training/train.txt' if split == 'train' else 'validation/val.txt')
+        self.calib_dir = os.path.join(self.data_dir, "calib")
+        self.label_dir = os.path.join(self.data_dir, "label_2")
         self.depth_dir = os.path.join(self.data_dir, 'depth')
-        self.calib_dir = os.path.join(self.data_dir, 'calib')
-        self.label_dir = os.path.join(self.data_dir, 'label_2')
+        self.denorm_dir = os.path.join(self.data_dir, "denorm")
+        self.extrinsics_dir = os.path.join(self.data_dir, "extrinsics")
+        self.image_dir = os.path.join(self.root_dir, 
+            "training-image_2a_6978886144233472/training-image_2a" if split == 'train' else 
+            'validation-image_2_6978886144233472/validation-image_2')  
+
+        idx_list = [x.strip() for x in open(self.split_txt).readlines()]
+        self.idx_list = []
+        for index in idx_list:
+            img_file = os.path.join(self.image_dir, index + ".jpg")
+            if os.path.exists(img_file):
+                self.idx_list.append(index)
 
         # data augmentation configuration
-        self.data_augmentation = True if split in ['train', 'trainval'] else False
+        self.data_augmentation = True if split in ['train'] else False
         self.random_flip = cfg['random_flip']
         self.random_crop = cfg['random_crop']
         self.scale = cfg['scale']
@@ -68,33 +75,42 @@ class KITTI(data.Dataset):
         # others
         self.downsample = 4
         
-    def get_image(self, idx):
-        img_file = os.path.join(self.image_dir, '%06d.png' % idx)
+    def get_image(self, index):
+        img_file = os.path.join(self.image_dir, index + ".jpg")
         assert os.path.exists(img_file)
-        return Image.open(img_file)    # (H, W, 3) RGB mode
+        return Image.open(img_file)           # (H, W, 3) RGB mode
 
-
-    def get_label(self, idx):
-        label_file = os.path.join(self.label_dir, '%06d.txt' % idx)
-        assert os.path.exists(label_file)
-        return get_objects_from_label(label_file)
-
-    def get_calib(self, idx):
-        calib_file = os.path.join(self.calib_dir, '%06d.txt' % idx)
+    def get_calib(self, index):
+        calib_file = os.path.join(self.calib_dir, index + ".txt")
         assert os.path.exists(calib_file)
         return Calibration(calib_file)
 
+    def get_label(self, index):
+        label_file = os.path.join(self.label_dir, index + ".txt")
+        assert os.path.exists(label_file)
+        return get_objects_from_label(label_file)
+
+    def get_denorm(self, index):
+        denorm_file = os.path.join(self.denorm_dir, index + ".txt")
+        assert os.path.exists(denorm_file)
+        with open(denorm_file, 'r') as f:
+            lines = f.readlines()
+        denorm = np.array([float(item) for item in lines[0].split(' ')])
+        return denorm
 
     def __len__(self):
-        return self.idx_list.__len__()
+        return len(self.idx_list[:1000])
 
     def __getitem__(self, item):
-        #  ============================   get inputs   ===========================
-        index = int(self.idx_list[item])  # index mapping, get real data id
-        # image loading
+        index = self.idx_list[item]
+        denorm = self.get_denorm(index)
+        # img_proto = self.get_image(index)
+        # img = img_proto.copy()
         img = self.get_image(index)
         img_size = np.array(img.size)
-
+        # data augmentation for image
+        center = np.array(img_size) / 2
+        crop_size = img_size
         # data augmentation for image
         center = np.array(img_size) / 2
         crop_size = img_size
@@ -103,7 +119,6 @@ class KITTI(data.Dataset):
             if np.random.random() < self.random_flip:
                 random_flip_flag = True
                 img = img.transpose(Image.FLIP_LEFT_RIGHT)
-
             if np.random.random() < self.random_crop:
                 random_crop_flag = True
                 crop_size = img_size * np.clip(np.random.randn()*self.scale + 1, 1 - self.scale, 1 + self.scale)
@@ -125,7 +140,7 @@ class KITTI(data.Dataset):
         calib = self.get_calib(index)
         features_size = self.resolution // self.downsample# W * H
         #  ============================   get labels   ==============================
-        if self.split!='test':
+        if self.split == 'train':
             objects = self.get_label(index)
             # data augmentation for labels
             if random_flip_flag:
@@ -172,7 +187,7 @@ class KITTI(data.Dataset):
     
                 # process 3d bbox & get 3d center
                 center_2d = np.array([(bbox_2d[0] + bbox_2d[2]) / 2, (bbox_2d[1] + bbox_2d[3]) / 2], dtype=np.float32)  # W * H
-                center_3d = objects[i].pos + [0, -objects[i].h / 2, 0]  # real 3D center in 3D space
+                center_3d, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
@@ -189,7 +204,7 @@ class KITTI(data.Dataset):
                 radius = gaussian_radius((w, h))
                 radius = max(0, int(radius))
     
-                if objects[i].cls_type in ['Van', 'Truck', 'DontCare']:
+                if objects[i].cls_type in ['van', 'truck']:
                     draw_umich_gaussian(heatmap[1], center_heatmap, radius)
                     continue
     
@@ -238,38 +253,29 @@ class KITTI(data.Dataset):
         inputs = img
         info = {'img_id': index,
                 'img_size': img_size,
+                'denorm': denorm,
                 'bbox_downsample_ratio': img_size/features_size}   
         return inputs, calib.P2, coord_range, targets, info   #calib.P2
-
-
-
-
+        # return img_proto, calib, coord_range, objects, info     # for debug
 
 if __name__ == '__main__':
-    from torch.utils.data import DataLoader
-    cfg = {'random_flip':0.0, 'random_crop':1.0, 'scale':0.4, 'shift':0.1, 'use_dontcare': False,
-           'class_merging': False, 'writelist':['Pedestrian', 'Car', 'Cyclist'], 'use_3d_center':False}
-    dataset = KITTI('../../data', 'train', cfg)
-    dataloader = DataLoader(dataset=dataset, batch_size=1)
-    print(dataset.writelist)
-
-    for batch_idx, (inputs, targets, info) in enumerate(dataloader):
-        # test image
-        img = inputs[0].numpy().transpose(1, 2, 0)
-        img = (img * dataset.std + dataset.mean) * 255
-        img = Image.fromarray(img.astype(np.uint8))
-        img.show()
-        # print(targets['size_3d'][0][0])
-
-        # test heatmap
-        heatmap = targets['heatmap'][0]  # image id
-        heatmap = Image.fromarray(heatmap[0].numpy() * 255)  # cats id
-        heatmap.show()
-
+    cfg = {'random_flip':0.0, 'random_crop':0.0, 'scale':0.0, 'shift':0.0, 'use_dontcare': False,
+           'class_merging': False, 'writelist':['car', 'pedestrian','cyclist'], 'use_3d_center':True}
+    root_dir = "/home/yanglei/DataSets/DAIR-V2X/Rope3D"
+    dataset = KITTI(root_dir, 'train', cfg)
+    for i in range(1):
         break
+        img_proto, calib, coord_range, objs, info = dataset[i]
+        demo_img = cv2.cvtColor(np.asarray(img_proto), cv2.COLOR_RGB2BGR)
+        for obj in objs:
+            if np.sum(obj.pos) == 0:
+                continue
+            center3d, corners3d = obj.generate_corners3d_denorm(info['denorm'])
+            pts_img, pts_depth = calib.rect_to_img(corners3d)
+            obj_c = np.mean(pts_img, axis=0)
+            box2d = obj.box2d
+            demo_img = draw_box_3d(demo_img, pts_img)
+            cv2.circle(demo_img, (int(obj_c[0]), int(obj_c[1])), 6, (0, 255, 0), thickness=-1)
+            cv2.rectangle(demo_img, (int(box2d[0]), int(box2d[1])), (int(box2d[2]), int(box2d[3])), (0, 255, 0))
+        cv2.imwrite(os.path.join("debug", str(i) + ".jpg"), demo_img)
 
-
-    # print ground truth fisrt
-    objects = dataset.get_label(0)
-    for object in objects:
-        print(object.to_kitti_format())

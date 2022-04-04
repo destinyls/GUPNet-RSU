@@ -9,7 +9,7 @@ from skimage import io
 
 
 def get_image_index_str(img_idx):
-    return "{:06d}".format(img_idx)
+    return img_idx
 
 
 def get_kitti_info_path(idx,
@@ -343,7 +343,8 @@ def get_label_annos(label_folder, image_ids=None):
     annos = []
     label_folder = pathlib.Path(label_folder)
     for idx in image_ids:
-        image_idx = get_image_index_str(idx)
+        # image_idx = get_image_index_str(idx)
+        image_idx = idx
         label_filename = label_folder / (image_idx + '.txt')
         annos.append(get_label_anno(label_filename))
     return annos

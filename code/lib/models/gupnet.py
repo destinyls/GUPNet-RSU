@@ -65,7 +65,7 @@ class GUPNet(nn.Module):
             neck_channels = channels[self.first_level]
         else:
             channels = self.backbone.channels
-            self.feat_up = globals()[neck](input_channels=channels, ckpt=ckpt)
+            self.feat_up = globals()[neck](input_channels=channels, ckpt=None)
             neck_channels = self.feat_up.channels
         
         # initialize the head of pipeline, according to heads setting.

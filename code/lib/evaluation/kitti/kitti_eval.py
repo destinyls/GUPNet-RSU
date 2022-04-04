@@ -8,9 +8,9 @@ import shutil
 from utils.miscellaneous import mkdir
 
 ID_TYPE_CONVERSION = {
-    0: 'Car',
-    1: 'Cyclist',
-    2: 'Pedestrian'
+    0: 'pedestrian',
+    1: 'car',
+    2: 'cyclist'
 }
 
 def kitti_evaluation(

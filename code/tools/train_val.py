@@ -45,7 +45,7 @@ def main():
     logger = create_logger(os.path.join(cfg['trainer']['log_dir'],'train.log'))    
     
     #  build dataloader
-    train_loader, val_loader, test_loader = build_dataloader(cfg['dataset'])
+    train_loader, val_loader = build_dataloader(cfg['dataset'])
 
     # build model
     ckpt = args.ckpt if args.ckpt is not '' else None

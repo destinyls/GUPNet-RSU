@@ -132,15 +132,10 @@ class GupnetLoss(nn.Module):
         
         return loss
 
-
-
-
 ### ======================  auxiliary functions  =======================
-
 def extract_input_from_tensor(input, ind, mask):
     input = _transpose_and_gather_feat(input, ind)  # B*C*H*W --> B*K*C
     return input[mask.bool()]  # B*K*C --> M * C
-
 
 def extract_target_from_tensor(target, mask):
     return target[mask.bool()]
@@ -214,4 +209,3 @@ if __name__ == '__main__':
     d = torch.zeros(2, 10, 1).long()
     e = torch.zeros(2, 10, 1)
     print(compute_heading_loss(a, b, c, d, e))
-

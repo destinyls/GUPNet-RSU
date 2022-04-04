@@ -1,6 +1,24 @@
-import numpy as np
 import cv2
 import pdb
+import math
+import numpy as np
+
+def draw_box_3d(image, corners, c=(0, 255, 0)):
+    face_idx = [[0,1,5,4],
+                [1,2,6,5],
+                [2,3,7,6],
+                [3,0,4,7]]
+    for ind_f in [3, 2, 1, 0]:
+        f = face_idx[ind_f]
+        for j in [0, 1, 2, 3]:
+            cv2.line(image, (int(corners[f[j], 0]), int(corners[f[j], 1])),
+                    (int(corners[f[(j+1)%4], 0]), int(corners[f[(j+1)%4], 1])), c, 2, lineType=cv2.LINE_AA)
+            if ind_f == 0:
+                cv2.line(image, (int(corners[f[0], 0]), int(corners[f[0], 1])),
+                        (int(corners[f[2], 0]), int(corners[f[2], 1])), (0, 0, 255), 1, lineType=cv2.LINE_AA)
+                cv2.line(image, (int(corners[f[1], 0]), int(corners[f[1], 1])),
+                        (int(corners[f[3], 0]), int(corners[f[3], 1])), (0, 0, 255), 1, lineType=cv2.LINE_AA)
+    return image
 ################  Object3D  ##################
 
 def get_objects_from_label(label_file):
@@ -8,7 +26,6 @@ def get_objects_from_label(label_file):
         lines = f.readlines()
     objects = [Object3d(line) for line in lines]
     return objects
-
 
 class Object3d(object):
     def __init__(self, line):
@@ -67,6 +84,37 @@ class Object3d(object):
         corners3d = np.dot(R, corners3d).T
         corners3d = corners3d + self.pos
         return corners3d
+    
+    
+    def generate_corners3d_denorm(self, denorm):
+        """
+        generate corners3d representation for this object
+        :return corners_3d: (8, 3) corners of box3d in camera coord
+        """
+        l, h, w = self.l, self.h, self.w
+        x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
+        y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
+        z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
+
+        corners3d = np.vstack([x_corners, y_corners, z_corners])  # (3, 8)
+        R = np.array([[np.cos(self.ry), 0, np.sin(self.ry)],
+                      [0, 1, 0],
+                      [-np.sin(self.ry), 0, np.cos(self.ry)]])
+        corners3d = np.dot(R, corners3d)
+
+        # ground palne equation
+        denorm = denorm[:3]
+        denorm_norm = denorm / np.sqrt(denorm[0]**2 + denorm[1]**2 + denorm[2]**2)
+        ori_denorm = np.array([0.0, -1.0, 0.0])
+        theta = -1 * math.acos(np.dot(denorm_norm, ori_denorm))
+        n_vector = np.cross(denorm, ori_denorm)
+        n_vector_norm = n_vector / np.sqrt(n_vector[0]**2 + n_vector[1]**2 + n_vector[2]**2)
+        rotation_matrix, j = cv2.Rodrigues(theta * n_vector_norm)
+        corners3d = np.dot(rotation_matrix, corners3d)
+        corners3d = corners3d.T + self.pos
+
+        center3d = np.mean(corners3d, axis=0)
+        return center3d, corners3d
 
 
     def to_bev_box2d(self, oblique=True, voxel_size=0.1):
@@ -117,21 +165,12 @@ class Object3d(object):
 def get_calib_from_file(calib_file):
     with open(calib_file) as f:
         lines = f.readlines()
-
-    obj = lines[2].strip().split(' ')[1:]
+    obj = lines[0].strip().split(' ')[1:]
     P2 = np.array(obj, dtype=np.float32)
-    obj = lines[3].strip().split(' ')[1:]
-    P3 = np.array(obj, dtype=np.float32)
-    obj = lines[4].strip().split(' ')[1:]
-    R0 = np.array(obj, dtype=np.float32)
-    obj = lines[5].strip().split(' ')[1:]
-    Tr_velo_to_cam = np.array(obj, dtype=np.float32)
-
     return {'P2': P2.reshape(3, 4),
-            'P3': P3.reshape(3, 4),
-            'R0': R0.reshape(3, 3),
-            'Tr_velo2cam': Tr_velo_to_cam.reshape(3, 4)}
-
+            'P3': P2.reshape(3, 4),
+            'R0': np.identity(3),
+            'Tr_velo2cam': np.identity(4)[:3, :]}
 
 class Calibration(object):
     def __init__(self, calib_file):
@@ -364,7 +403,6 @@ def get_dir(src_point, rot_rad):
     src_result[1] = src_point[0] * sn + src_point[1] * cs
 
     return src_result
-
 
 def get_3rd_point(a, b):
     direct = a - b
