@@ -2,8 +2,8 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../datasets'
-  batch_size: 8
+  root_dir: '../datasets/Rope3D-KITTI'
+  batch_size: 16
   class_merging: False
   use_dontcare: False
   use_3d_center: True
@@ -15,13 +15,13 @@ dataset:
 
 model:
   type: 'gupnet'
-  backbone: 'Swin_B'
+  backbone: 'ResNet18'
   neck: 'DeconvUp'
 
 optimizer:
-  type: 'adamw'
-  lr: 0.0001
-  weight_decay: 0.05
+  type: 'adam'
+  lr: 0.00125
+  weight_decay: 0.00001
 
 lr_scheduler:
   warmup: True  # 5 epoches, cosine warmup, init_lir=0.00001 in default
@@ -29,13 +29,14 @@ lr_scheduler:
   decay_list: [90, 120]
 
 trainer:
-  max_epoch: 300
+  max_epoch: 200
   eval_frequency: 1000 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   log_dir: 'log'
-  output_dir: "outputs/eval_metrics_R40_Swin_B_DeconvUp_SimMIM_001nd"
+  output_dir: "outputs/eval_metrics_R40_ResNet18_Rope3D_3_Class_001nd"
   #resume_model: '...'  
 tester:
   threshold: 0.2  # confidence filter
   #resume_model: '...'  
+  

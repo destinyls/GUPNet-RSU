@@ -8,9 +8,11 @@ import numpy as np
 from lib.helpers.save_helper import load_checkpoint
 from lib.helpers.decode_helper import extract_dets_from_outputs
 from lib.helpers.decode_helper import decode_detections
+
 class Tester(object):
     def __init__(self, cfg, model, data_loader, logger):
-        self.cfg = cfg
+        self.cfg = cfg['tester']
+        self.output_dir = cfg['trainer']['output_dir']
         self.model = model
         self.data_loader = data_loader
         self.logger = logger
@@ -20,7 +22,7 @@ class Tester(object):
         if self.cfg.get('resume_model', None):
             load_checkpoint(model = self.model,
                         optimizer = None,
-                        filename = cfg['resume_model'],
+                        filename = self.cfg['resume_model'],
                         logger = self.logger,
                         map_location=self.device)
 
@@ -40,8 +42,8 @@ class Tester(object):
             coord_ranges = coord_ranges.to(self.device)
 
             # the outputs of centernet
-            outputs = self.model(inputs,coord_ranges,calibs,K=50,mode='test')
-            dets = extract_dets_from_outputs(outputs=outputs, K=50)
+            outputs = self.model(inputs,coord_ranges,calibs,K=100,mode='test')
+            dets = extract_dets_from_outputs(outputs=outputs, K=100)
             dets = dets.detach().cpu().numpy()
 
 
@@ -57,7 +59,7 @@ class Tester(object):
             results.update(dets)
             progress_bar.update()
         # save the result for evaluation.
-        self.save_results(results)
+        self.save_results(results, self.output_dir)
         progress_bar.close()
 
     def save_results(self, results, output_dir='./outputs'):

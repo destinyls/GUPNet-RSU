@@ -26,6 +26,7 @@ def evaluate(label_path,
         dt_annos = kitti.filter_annos_low_score(dt_annos, score_thresh)
     val_image_ids = _read_imageset_file(label_split_file)
     gt_annos = kitti.get_label_annos(label_path, val_image_ids)
+    print(len(dt_annos), len(gt_annos))
     if coco:
         return get_coco_eval_result(gt_annos, dt_annos, current_class)
     else:

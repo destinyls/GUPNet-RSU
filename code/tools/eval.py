@@ -30,9 +30,9 @@ if __name__ == "__main__":
     cfg_train = cfg['trainer']
     logger = create_logger(os.path.join(cfg_train['log_dir'],'train.log'))    
 
-    gt_label_path = "../datasets/KITTI/training/label_2/"
-    imageset_txt = "../datasets/KITTI/ImageSets/val.txt"
-    pred_label_path = os.path.join('./outputs', 'data')
+    gt_label_path = os.path.join(cfg['dataset']['root_dir'], 'testing', 'label_2')
+    imageset_txt = os.path.join(cfg['dataset']['root_dir'], 'ImageSets', 'val.txt')
+    pred_label_path = os.path.join(cfg_train['output_dir'], 'data')
     os.makedirs(pred_label_path, exist_ok=True)
 
     evaluation_path = os.path.join(cfg_train['output_dir'], 'eval_metric')
@@ -49,7 +49,7 @@ if __name__ == "__main__":
         epoch = int(pth_name[17:-4])
         model_state = torch.load(os.path.join(checkpoint_path, pth_name))["model_state"]
         model.load_state_dict(model_state)
-        tester = Tester(cfg['tester'], model, val_loader, logger)
+        tester = Tester(cfg, model, val_loader, logger)
         tester.test()
 
         result, ret_dict = evaluate_python(label_path=gt_label_path, 

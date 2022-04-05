@@ -32,7 +32,6 @@ def decode_detections(dets, info, calibs, cls_mean_size, threshold):
 
             # heading angle decoding
             alpha = get_heading_angle(dets[i, j, 7:31])
-            ry = calibs[i].alpha2ry(alpha, x)
 
             # dimensions decoding
             dimensions = dets[i, j, 31:34]
@@ -44,6 +43,9 @@ def decode_detections(dets, info, calibs, cls_mean_size, threshold):
             y3d = dets[i, j, 35] * info['bbox_downsample_ratio'][i][1]
             locations = calibs[i].img_to_rect(x3d, y3d, depth).reshape(-1)
             locations[1] += dimensions[0] / 2
+            
+            # ry = calibs[i].alpha2ry(alpha, x)
+            ry = calibs[i].alpha2roty(alpha, locations)
 
             preds.append([cls_id, alpha] + bbox + dimensions.tolist() + locations.tolist() + [ry, score])
         results[info['img_id'][i]] = preds

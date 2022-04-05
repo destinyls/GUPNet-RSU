@@ -21,10 +21,10 @@ class KITTI(data.Dataset):
     def __init__(self, root_dir, split, cfg):
         # basic configuration
         self.num_classes = 3
-        self.max_objs = 50
+        self.max_objs = 100
         self.class_name = ['Pedestrian', 'Car', 'Cyclist']
         self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
-        self.resolution = np.array([1280, 384])  # W * H
+        self.resolution = np.array(cfg['resolution'])  # W * H
         self.use_3d_center = cfg['use_3d_center']
         self.writelist = cfg['writelist']
         if cfg['class_merging']:
@@ -44,11 +44,11 @@ class KITTI(data.Dataset):
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
         self.split = split
-        split_dir = os.path.join(root_dir, 'KITTI', 'ImageSets', split + '.txt')
+        split_dir = os.path.join(root_dir, 'ImageSets', split + '.txt')
         self.idx_list = [x.strip() for x in open(split_dir).readlines()]
 
         # path configuration
-        self.data_dir = os.path.join(root_dir, 'KITTI', 'testing' if split == 'test' else 'training')
+        self.data_dir = os.path.join(root_dir, 'testing' if split == 'test' else 'training')
         self.image_dir = os.path.join(self.data_dir, 'image_2')
         self.depth_dir = os.path.join(self.data_dir, 'depth')
         self.calib_dir = os.path.join(self.data_dir, 'calib')
@@ -73,7 +73,6 @@ class KITTI(data.Dataset):
         assert os.path.exists(img_file)
         return Image.open(img_file)    # (H, W, 3) RGB mode
 
-
     def get_label(self, idx):
         label_file = os.path.join(self.label_dir, '%06d.txt' % idx)
         assert os.path.exists(label_file)
@@ -83,7 +82,6 @@ class KITTI(data.Dataset):
         calib_file = os.path.join(self.calib_dir, '%06d.txt' % idx)
         assert os.path.exists(calib_file)
         return Calibration(calib_file)
-
 
     def __len__(self):
         return self.idx_list.__len__()
@@ -125,7 +123,7 @@ class KITTI(data.Dataset):
         calib = self.get_calib(index)
         features_size = self.resolution // self.downsample# W * H
         #  ============================   get labels   ==============================
-        if self.split!='test':
+        if self.split in ['train']:
             objects = self.get_label(index)
             # data augmentation for labels
             if random_flip_flag:
@@ -157,7 +155,6 @@ class KITTI(data.Dataset):
                 # filter objects by writelist
                 if objects[i].cls_type not in self.writelist:
                     continue
-    
                 # filter inappropriate samples by difficulty
                 if objects[i].level_str == 'UnKnown' or objects[i].pos[-1] < 2:
                     continue
@@ -206,8 +203,11 @@ class KITTI(data.Dataset):
                 depth[i] = objects[i].pos[-1]
     
                 # encoding heading angle
-                #heading_angle = objects[i].alpha
-                heading_angle = calib.ry2alpha(objects[i].ry, (objects[i].box2d[0]+objects[i].box2d[2])/2)
+                # heading_angle = objects[i].alpha
+                # heading_angle = calib.ry2alpha(objects[i].ry, (objects[i].box2d[0]+objects[i].box2d[2])/2)
+                ry = objects[i].ry - 2 * np.pi if objects[i].ry > np.pi else objects[i].ry
+                heading_angle = calib.roty2alpha(ry, objects[i].pos)
+                # print("heading_angle ----------- roty :", heading_angle, objects[i].ry)
                 if heading_angle > np.pi:  heading_angle -= 2 * np.pi  # check range
                 if heading_angle < -np.pi: heading_angle += 2 * np.pi
                 heading_bin[i], heading_res[i] = angle2class(heading_angle)
@@ -240,9 +240,6 @@ class KITTI(data.Dataset):
                 'img_size': img_size,
                 'bbox_downsample_ratio': img_size/features_size}   
         return inputs, calib.P2, coord_range, targets, info   #calib.P2
-
-
-
 
 
 if __name__ == '__main__':

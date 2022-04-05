@@ -266,6 +266,22 @@ class Calibration(object):
         inv_Tr[0:3, 3] = np.dot(-np.transpose(Tr[0:3, 0:3]), Tr[0:3, 3])
         return inv_Tr
 
+    def roty2alpha(self, ry, pos):
+        alpha = ry - np.arctan2(pos[0], pos[2])
+        if alpha > np.pi:
+            alpha -= 2 * np.pi
+        if alpha < -np.pi:
+            alpha += 2 * np.pi
+        return alpha
+
+    def alpha2roty(self, alpha, pos):
+        ry = alpha + np.arctan2(pos[0], pos[2])
+        if ry > np.pi:
+            ry -= 2 * np.pi
+        if ry < -np.pi:
+            ry += 2 * np.pi
+        return ry
+
     def alpha2ry(self, alpha, u):
         """
         Get rotation_y by alpha + theta - 180
