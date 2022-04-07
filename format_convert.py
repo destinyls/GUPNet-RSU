@@ -4,6 +4,7 @@ import argparse
 import cv2
 
 import numpy as np
+
 from shutil import copyfile
 from tqdm import tqdm
 
@@ -17,6 +18,16 @@ def parse_option():
     args = parser.parse_args()
     return args
     
+def copy_file(file_src, file_dest):
+    if not os.path.exists(file_dest):
+        try:
+            copyfile(file_src, file_dest)
+        except IOError as e:
+            print("Unable to copy file. %s" % e)
+            exit(1)
+        except:
+            print("Unexpected error:", sys.exc_info())
+            exit(1)
 
 def convert_calib(src_calib_file, dest_calib_file):
     with open(src_calib_file) as f:
@@ -65,7 +76,7 @@ def convert_label(src_label_file, dest_label_file):
         label = line.strip().split(' ')
         cls_type = label[0]
         label[0] = category_map[cls_type]
-        if cls_type not in ['car', 'pedestrian', 'cyclist']:
+        if cls_type not in ['car', 'pedestrian', 'cyclist', 'van', 'truck', 'bus', 'motorcyclist', 'tricyclist']:
             continue
         
         truncated = int(label[1])
@@ -92,22 +103,29 @@ def main(src_root, dest_root, split='train'):
     if split == 'train':
         src_dir = os.path.join(src_root, "training")
         dest_dir = os.path.join(dest_root, "training")
-        img_path = "training-image_2a_6978886144233472/training-image_2a"
+        img_path = "training-image_2a"
+        depth_img_path = "training-depth_2"
     else:
         src_dir = os.path.join(src_root, "validation")
         dest_dir = os.path.join(dest_root, "testing")
-        img_path = "validation-image_2_6978886144233472/validation-image_2"
+        img_path = "validation-image_2"
+        depth_img_path = "validation-depth_2"
         
     os.makedirs(dest_dir, exist_ok=True)
     os.makedirs(os.path.join(dest_dir, "image_2"), exist_ok=True)
     os.makedirs(os.path.join(dest_dir, "label_2"), exist_ok=True)
     os.makedirs(os.path.join(dest_dir, "calib"), exist_ok=True)
+    os.makedirs(os.path.join(dest_dir, "depth"), exist_ok=True)
+    os.makedirs(os.path.join(dest_dir, "denorm"), exist_ok=True)
+
     os.makedirs(os.path.join(dest_dir, "../", "ImageSets"), exist_ok=True)
     imageset_txt = os.path.join(dest_dir, "../", "ImageSets", "train.txt" if split=='train' else 'test.txt')
     
     src_img_path = os.path.join(src_dir, "../", img_path)
+    src_depth_img_path = os.path.join(src_dir, "../", depth_img_path)
     src_label_path = os.path.join(src_dir, "label_2")
     src_calib_path = os.path.join(src_dir, "calib")
+    src_denorm_path = os.path.join(src_dir, "denorm")
     
     split_txt = os.path.join(src_dir, "train.txt" if split=='train' else 'val.txt')
     idx_list = [x.strip() for x in open(split_txt).readlines()]
@@ -121,12 +139,16 @@ def main(src_root, dest_root, split='train'):
     img_id_list = []
     for index in tqdm(idx_list_valid):
         src_img_file = os.path.join(src_img_path, index + ".jpg")
+        src_depth_img_file = os.path.join(src_depth_img_path, index + ".jpg")
         src_label_file = os.path.join(src_label_path, index + ".txt")
         src_calib_file = os.path.join(src_calib_path, index + ".txt")
+        src_denorm_file = os.path.join(src_denorm_path, index + ".txt")
     
         dest_img_file = os.path.join(dest_dir, "image_2", '{:06d}.png'.format(img_id))
+        dest_depth_img_file = os.path.join(dest_dir, "depth", '{:06d}.jpg'.format(img_id))
         dest_label_file = os.path.join(dest_dir, "label_2", '{:06d}.txt'.format(img_id))
         dest_calib_file = os.path.join(dest_dir, "calib", '{:06d}.txt'.format(img_id))
+        dest_denorm_file = os.path.join(dest_dir, "denorm", '{:06d}.txt'.format(img_id))
         
         img_id_list.append(img_id)
         img_id = img_id + 1
@@ -138,6 +160,10 @@ def main(src_root, dest_root, split='train'):
         convert_calib(src_calib_file, dest_calib_file)
         # label
         convert_label(src_label_file, dest_label_file)
+        # depth
+        copy_file(src_depth_img_file, dest_depth_img_file)
+        # denorm
+        copy_file(src_denorm_file, dest_denorm_file)
 
     with open(imageset_txt,'w') as f:
         for idx in img_id_list:
@@ -149,4 +175,5 @@ if __name__ == "__main__":
     args = parse_option()
     src_root, dest_root, split = args.src_root, args.dest_root, args.split
     main(src_root, dest_root, split)
+    
         

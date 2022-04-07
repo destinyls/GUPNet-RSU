@@ -2,14 +2,14 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../datasets/Rope3D-KITTI-RY'
+  root_dir: '../datasets/Rope3D-KITTI'
   batch_size: 16
   class_merging: False
   use_dontcare: False
   use_3d_center: True
   writelist: ['Car','Pedestrian','Cyclist']
-  random_flip: 0.0
-  random_crop: 0.0
+  random_flip: 0.5
+  random_crop: 0.5
   scale: 0.4
   shift: 0.1
   resolution: [1920, 1056]
@@ -35,7 +35,7 @@ trainer:
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   log_dir: 'log'
-  output_dir: "outputs/eval_metrics_R40_ResNet18_Rope3D_003nd"
+  output_dir: "outputs/eval_metrics_R40_ResNet18_Rope3D_004nd"
   #resume_model: '...'  
 tester:
   threshold: 0.2  # confidence filter

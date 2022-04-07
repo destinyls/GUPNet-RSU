@@ -60,6 +60,7 @@ class Trainer(object):
             # ref: https://github.com/pytorch/pytorch/issues/5059
             np.random.seed(np.random.get_state()[1][0] + epoch)
             loss_weights = loss_weightor.compute_weight(ei_loss,self.epoch)
+            del ei_loss
             log_str = 'Weights: '
             for key in sorted(loss_weights.keys()):
                 log_str += ' %s:%.4f,' %(key[:-4], loss_weights[key])   
@@ -117,7 +118,7 @@ class Trainer(object):
         self.model.train()
         disp_dict = {}
         stat_dict = {}
-        for batch_idx, (inputs,calibs,coord_ranges, targets, info) in enumerate(self.train_loader):
+        for batch_idx, (inputs, calibs,coord_ranges, targets, info) in enumerate(self.train_loader):
             inputs = inputs.to(self.device)
             calibs = calibs.to(self.device)
             coord_ranges = coord_ranges.to(self.device)
@@ -136,7 +137,6 @@ class Trainer(object):
             self.optimizer.step()
             
             trained_batch = batch_idx + 1
-
             # accumulate statistics
             for key in loss_terms.keys():
                 if key not in stat_dict.keys():

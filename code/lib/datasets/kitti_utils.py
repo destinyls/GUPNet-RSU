@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
 import pdb
+import os
+import math
 ################  Object3D  ##################
 
 def get_objects_from_label(label_file):
@@ -9,6 +11,55 @@ def get_objects_from_label(label_file):
     objects = [Object3d(line) for line in lines]
     return objects
 
+def draw_box_3d(image, corners, c=(0, 255, 0)):
+    face_idx = [[0,1,5,4],
+                [1,2,6,5],
+                [2,3,7,6],
+                [3,0,4,7]]
+    points = []
+    for ind_f in [3, 2, 1, 0]:
+        f = face_idx[ind_f]
+        for j in [0, 1, 2, 3]:
+            cv2.line(image, (int(corners[f[j], 0]), int(corners[f[j], 1])),
+                    (int(corners[f[(j+1)%4], 0]), int(corners[f[(j+1)%4], 1])), c, 2, lineType=cv2.LINE_AA)
+            if [int(corners[f[j], 0]), int(corners[f[j], 1])] not in points:
+                points.append([int(corners[f[j], 0]), int(corners[f[j], 1])])
+            if [int(corners[f[(j+1)%4], 0]), int(corners[f[(j+1)%4], 1])] not in points:
+                points.append([int(corners[f[(j+1)%4], 0]), int(corners[f[(j+1)%4], 1])])
+
+        if ind_f == 0:
+            cv2.line(image, (int(corners[f[0], 0]), int(corners[f[0], 1])),
+                    (int(corners[f[2], 0]), int(corners[f[2], 1])), c, 1, lineType=cv2.LINE_AA)
+            cv2.line(image, (int(corners[f[1], 0]), int(corners[f[1], 1])),
+                    (int(corners[f[3], 0]), int(corners[f[3], 1])), c, 1, lineType=cv2.LINE_AA)
+        
+    if len(points) == 8:
+        points_1 = points[:4]
+        points_2 = [points[7], points[6], points[4], points[5]]
+        points_3 = [points[0], points[3], points[5], points[4]]
+        points_4 = [points[1], points[2], points[7], points[6]]
+        points_5 = [points[2], points[3], points[5], points[7]]
+        points_6 = [points[1], points[0], points[4], points[6]]
+
+        points_1 = np.array([points_1])
+        points_2 = np.array([points_2])
+        points_3 = np.array([points_3])
+        points_4 = np.array([points_4])
+        points_5 = np.array([points_5])
+        points_6 = np.array([points_6])
+        zeros = np.zeros((image.shape), dtype=np.uint8)
+        if c == (0, 255, 0):
+            c = (128, 205, 67)
+        elif c == (255, 0, 0):
+            c = (237, 149, 100)
+        mask = cv2.fillPoly(zeros, points_1, color=c)
+        mask = cv2.fillPoly(mask, points_2, color=c)
+        mask = cv2.fillPoly(mask, points_3, color=c)
+        mask = cv2.fillPoly(mask, points_4, color=c)
+        mask = cv2.fillPoly(mask, points_5, color=c)
+        mask = cv2.fillPoly(mask, points_6, color=c)
+        image = 0.3 * mask + image
+    return image
 
 class Object3d(object):
     def __init__(self, line):
@@ -68,6 +119,35 @@ class Object3d(object):
         corners3d = corners3d + self.pos
         return corners3d
 
+    def generate_corners3d_denorm(self, denorm):
+        """
+        generate corners3d representation for this object
+        :return corners_3d: (8, 3) corners of box3d in camera coord
+        """
+        l, h, w = self.l, self.h, self.w
+        x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
+        y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
+        z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
+
+        corners3d = np.vstack([x_corners, y_corners, z_corners])  # (3, 8)
+        R = np.array([[np.cos(self.ry), 0, np.sin(self.ry)],
+                      [0, 1, 0],
+                      [-np.sin(self.ry), 0, np.cos(self.ry)]])
+        corners3d = np.dot(R, corners3d)
+
+        # ground palne equation
+        denorm = denorm[:3]
+        denorm_norm = denorm / np.sqrt(denorm[0]**2 + denorm[1]**2 + denorm[2]**2)
+        ori_denorm = np.array([0.0, -1.0, 0.0])
+        theta = -1 * math.acos(np.dot(denorm_norm, ori_denorm))
+        n_vector = np.cross(denorm, ori_denorm)
+        n_vector_norm = n_vector / np.sqrt(n_vector[0]**2 + n_vector[1]**2 + n_vector[2]**2)
+        rotation_matrix, j = cv2.Rodrigues(theta * n_vector_norm)
+        corners3d = np.dot(rotation_matrix, corners3d)
+        corners3d = corners3d.T + self.pos
+
+        center3d = np.mean(corners3d, axis=0)
+        return center3d, corners3d
 
     def to_bev_box2d(self, oblique=True, voxel_size=0.1):
         """
@@ -95,13 +175,11 @@ class Object3d(object):
 
         return box2d
 
-
     def to_str(self):
         print_str = '%s %.3f %.3f %.3f box2d: %s hwl: [%.3f %.3f %.3f] pos: %s ry: %.3f' \
                      % (self.cls_type, self.trucation, self.occlusion, self.alpha, self.box2d, self.h, self.w, self.l,
                         self.pos, self.ry)
         return print_str
-
 
     def to_kitti_format(self):
         kitti_str = '%s %.2f %d %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f' \
@@ -110,10 +188,7 @@ class Object3d(object):
                        self.ry)
         return kitti_str
 
-
-
 ###################  calibration  ###################
-
 def get_calib_from_file(calib_file):
     with open(calib_file) as f:
         lines = f.readlines()
@@ -290,17 +365,14 @@ class Calibration(object):
         rotation_y : Rotation ry around Y-axis in camera coordinates [-pi..pi]
         """
         ry = alpha + np.arctan2(u - self.cu, self.fu)
-
         if ry > np.pi:
             ry -= 2 * np.pi
         if ry < -np.pi:
             ry += 2 * np.pi
-
         return ry
 
     def ry2alpha(self, ry, u):
         alpha = ry - np.arctan2(u - self.cu, self.fu)
-
         if alpha > np.pi:
             alpha -= 2 * np.pi
         if alpha < -np.pi:
@@ -340,6 +412,7 @@ class Calibration(object):
         self.fv = self.P2[1, 1]
         self.tx = self.P2[0, 3] / (-self.fu)
         self.ty = self.P2[1, 3] / (-self.fv) 
+        
     def affine_transform(self,img_size,trans):
         wsize = 4
         hsize = 2
@@ -364,14 +437,240 @@ class Calibration(object):
         new_calib_matrix[3,:] = new_calib[3:6]
         new_calib_matrix[-1,-1] = self.P2[-1,-1]
         return new_calib_matrix.T
-        #return new_calib_matrix.T       
-        #print('{}-->{}'.format(ori_size,tar_size))
-        #print(new_calib_matrix.T)
-        #print(np.abs(p3ds[:,:2] - self.img_to_rect(p2ds[:,0:1],p2ds[:,1:2],p2ds[:,2:3])[:,:2]).max())
-        #assert(np.abs(p3ds[:,:2] - self.img_to_rect(p2ds[:,0:1],p2ds[:,1:2],p2ds[:,2:3])[:,:2]).max()<1e-10)
+
+class PointCloudFilter(object):
+    """
+    Class for getting lidar-bev ground truth annotation from camera-view
+    annotation.
+    :param res: float. resolution in meters. Each output pixel will
+                represent an square region res x res in size.
+    :param side_range: tuple of two floats. (left-most, right_most)
+    :param fwd_range: tuple of two floats. (back-most, forward-most)
+    :param height_range: tuple of two floats. (min, max)
+    :param calib: class instance for getting transform matrix from
+                  calibration.
+    """
+    def __init__(self,
+                 side_range=(-39.68, 39.68),
+                 fwd_range=(0, 69.12),
+                 height_range=(-2., -2.),
+                 res=0.10):
+        self.res = res
+        self.side_range = side_range
+        self.fwd_range = fwd_range
+        self.height_range = height_range
+
+    def set_range_patameters(self, side_range, fwd_range, height_range):
+        self.side_range = side_range
+        self.fwd_range = fwd_range
+        self.height_range = height_range
+
+    def read_bin(self, path):
+        """
+        Helper function to read one frame of lidar pointcloud in .bin format.
+        :param path: where pointcloud is stored in .bin format.
+        :return: (x, y, z, intensity) of pointcloud, N x 4.
+        """
+        points = np.fromfile(path, dtype=np.float32, count=-1).reshape([-1, 4])
+        x_points, y_points, z_points, indices = self.get_pcl_range(points)
+        filtered_points = np.concatenate((x_points[:,np.newaxis], y_points[:,np.newaxis], z_points[:,np.newaxis]), axis = 1)
+        return filtered_points
+
+    def scale_to_255(self, value, minimum, maximum, dtype=np.uint8):
+        """
+        Scales an array of values from specified min, max range to 0-255.
+        Optionally specify the data type of the output (default is uint8).
+        """
+        if minimum!= maximum:
+            return (((value - minimum) / float(maximum - minimum))
+                    * 255).astype(dtype)
+        else:
+            return self.get_meshgrid()
+
+    def get_pcl_range(self, points):
+        """
+        Get the pointcloud wihtin side_range and fwd_range.
+        :param points: np.float, N x 4. each column is [x, y, z, intensity].
+        :return: [x, y, z, intensity] of filtered points and corresponding
+                 indices.
+        """
+        x_points = points[:, 0]
+        y_points = points[:, 1]
+        z_points = points[:, 2]
+        indices = []
+        for i in range(points.shape[0]):
+            if points[i, 0] > self.fwd_range[0] and points[i, 0] < self.fwd_range[1]:
+                if points[i, 1]  > self.side_range[0] and points[i, 1] < self.side_range[1]:
+                    indices.append(i)
+
+        indices = np.array(indices)
+        if len(indices) == 0:
+            return np.array([]), np.array([]), np.array([]), np.array([])
+
+        x_points = x_points[indices]
+        y_points = y_points[indices]
+        z_points = z_points[indices]
+        return x_points, y_points, z_points, indices
+
+    def clip_height(self, z_points):
+        """
+        Clip the height between (min, max).
+        :param z_points: z_points from get_pcl_range
+        :return: clipped height between (min,max).
+        """
+        height = np.clip(
+            a=z_points, a_max=self.height_range[1], a_min=self.height_range[0]
+        )
+        return height
+
+    def get_meshgrid(self):
+        """
+        Create mesh grids (size: res x res) in the x-y plane of the lidar
+        :return: np.array: uint8, x-y plane mesh grids based on resolution.
+        """
+        x_max = 1 + int((self.side_range[1] - self.side_range[0]) / self.res)
+        y_max = 1 + int((self.fwd_range[1] - self.fwd_range[0]) / self.res)
+        img = np.zeros([y_max, x_max], dtype=np.uint8)
+        return img
+
+    def pcl2xy_plane(self, x_points, y_points):
+        """
+        Convert the lidar coordinate to x-y plane coordinate.
+        :param x_points: x of points in lidar coordinate.
+        :param y_points: y of points in lidar coordinate.
+        :return: corresponding pixel position based on resolution.
+        """
+        x_img = (-y_points / self.res).astype(np.int32) # x axis is -y in lidar
+        y_img = (-x_points / self.res).astype(np.int32) # y axis is -x in lidar
+        # shift pixels to have minimum be (0,0)
+        x_img -= int(np.floor(self.side_range[0] / self.res))
+        y_img += int(np.ceil(self.fwd_range[1] / self.res))
+        return x_img, y_img
+
+    def pcl_2_bev(self, points):
+        """
+        Creates an 2D birds eye view representation of the pointcloud.
+        :param points: np.float, N x 4. input pointcloud matrix,
+                       each column is [x, y, z, intensity]
+        :return: np.array, representing an image of the BEV.
+        """
+        # rescale the height values - to be between the range 0-255
+        x_points, y_points, z_points, _ = self.get_pcl_range(points)
+        x_img, y_img = self.pcl2xy_plane(x_points, y_points)
+        height = self.clip_height(z_points)
+        bev_img = self.get_meshgrid()
+        pixel_values = self.scale_to_255(height,
+                                         self.height_range[0],
+                                         self.height_range[1])
+        # fill pixel values in image array
+        x_img = np.clip(x_img, 0, bev_img.shape[1] - 1)
+        y_img = np.clip(y_img, 0, bev_img.shape[0] - 1)
+        print(bev_img.shape)
+        bev_img[y_img, x_img] = 255
+        return bev_img
+
+    def pcl_anno_bev(self, points, point_road_index, point_out_road_index):
+        """
+        :param points: np.float, N x 4. input pointcloud matrix.
+        :param point_road_index: index of points on free road surface.
+        :param point_out_road_index: index of points out free road surface.
+        :return: BEV of lidar pointcloud containing free road annotation. 
+        """
+        x_points, y_points, _, _, indices = self.get_pcl_range(points)
+        on_road = []
+        out_road = []
+        for i in range(len(indices)):
+            if indices[i] in point_road_index:
+                on_road.append(i)
+            if indices[i] in point_out_road_index:
+                out_road.append(i)
+        pcl_anno_bev_img = self.get_meshgrid()
+        x_points_road = x_points[on_road]
+        y_points_road = y_points[on_road]
+        x_road_img, y_road_img = self.pcl2xy_plane(x_points_road,
+                                                   y_points_road)
+        x_points_out_road = x_points[out_road]
+        y_points_out_road = y_points[out_road]
+        x_out_road_img, y_out_road_img = self.pcl2xy_plane(x_points_out_road,
+                                                           y_points_out_road)
+
+        pcl_anno_bev_img[y_road_img, x_road_img] = 255
+        pcl_anno_bev_img[y_out_road_img, x_out_road_img] = 100
+        return pcl_anno_bev_img
+
+    @staticmethod
+    def add_color_pcd(path1, path2, point_road_index):
+        """
+        Helper function to use different color to distinguish points on free 
+        road or out free road.
+        :param path1: where pointcloud is stored in .pcd format.
+        :param path2: storage path after function add_color_pcd.
+        :param point_road_index: index of points on free road in pointcloud 
+                                 matrix.
+        """
+        with open(path1, 'rb') as fopen:
+            lines = fopen.readlines()
+        lines[2] = lines[2].split('\n')[0] + ' rgb\n'
+        lines[3] = lines[3].split('\n')[0] + ' 4\n'
+        lines[4] = lines[4].split('\n')[0] + ' I\n'
+        lines[5] = lines[5].split('\n')[0] + ' 1\n'
+        for i in range(len(lines)-11):
+            if i in point_road_index:
+                # 0xFFFF00: yellow, free road surface;
+                # 0xFF0019: red, non-free road surface.
+                lines[i + 11] = lines[i + 11].split('\n')[0] + ' ' + str(
+                    0xFFFF00) + '\n'
+            else:
+                lines[i + 11] = lines[i + 11].split('\n')[0] + ' ' + str(
+                    0xFF0019) + '\n'
+        with open(path2, 'wb') as fwrite:
+            fwrite.writelines(lines)
+
+    @staticmethod
+    def img_overlay_display(img1, img2):
+        """
+        Helper function to overlay two images to display.
+        :param img1, img2: Images you want to overlay to display.
+        :return: added image.
+        """
+        # img_1 has 3 channels, img2 has 1. 
+        img_2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]), 
+                           interpolation=cv2.INTER_AREA)
+        img_1 = np.array([[int(sum(img1[i][j])/3) for j in range(len(img1[i]))]
+                          for i in range(len(img1))], dtype=np.uint8)
+        alpha = 0.3
+        beta = 1 - alpha
+        gamma = 0
+        img_add = cv2.addWeighted(img_1, alpha, img_2, beta, gamma)
+        return img_add
+
+    def get_line(self, original_point, box, x_0, y_0, pixel_x):
+        """
+        Assume that the obstacles and the areas behind the obstacles are all
+        non-free road.
+        Get a fit line from the lidar emission point to the obstacle boundary.       
+        :param original_point: position of lidar emission point.
+        :param box: representation of obstacle.
+        :param x_0: boundary of box.
+        :param y_0: boundary of box
+        :param pixel_x: x range of area behind the obstacle.
+        :return: a fit line, that is y range of area behind the obstacle.
+        """
+        y_line = int(original_point[1] -
+                     (original_point[0] - pixel_x)*
+                     (original_point[1] - box[1][y_0]) /
+                     (original_point[0] - box[0][x_0])) + 1
+        return y_line
+
+    def get_bev_image(self, velodyne_path):
+        if not os.path.exists(velodyne_path):
+            raise ValueError(velodyne_path, "not Found")
+        filtered_points = self.read_bin(velodyne_path)
+        bev_image = self.pcl_2_bev(filtered_points)
+        bev_image = cv2.merge([bev_image, bev_image, bev_image])
+        return bev_image
 
 ###################  affine trainsform  ###################
-
 def get_dir(src_point, rot_rad):
     sn, cs = np.sin(rot_rad), np.cos(rot_rad)
 
@@ -381,11 +680,9 @@ def get_dir(src_point, rot_rad):
 
     return src_result
 
-
 def get_3rd_point(a, b):
     direct = a - b
     return b + np.array([-direct[1], direct[0]], dtype=np.float32)
-
 
 def get_affine_transform(center,
                          scale,
@@ -423,7 +720,6 @@ def get_affine_transform(center,
         trans = cv2.getAffineTransform(np.float32(src), np.float32(dst))
     return trans
 
-
 def affine_transform(pt, t):
     new_pt = np.array([pt[0], pt[1], 1.], dtype=np.float32).T
     new_pt = np.dot(t, new_pt)
@@ -436,55 +732,3 @@ def roty(t):
     return np.array([[c,  0,  s],
                      [0,  1,  0],
                      [-s, 0,  c]])
-def compute_box_3d(obj, calib):
-    ''' Takes an object and a projection matrix (P) and projects the 3d
-        bounding box into the image plane.
-        Returns:
-            corners_2d: (8,2) array in left image coord.
-            corners_3d: (8,3) array in in rect camera coord.
-    '''
-    # compute rotational matrix around yaw axis
-    R = roty(obj.ry)    
-
-    # 3d bounding box dimensions
-    l = obj.l;
-    w = obj.w;
-    h = obj.h;
-    
-    # 3d bounding box corners
-    x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2];
-    y_corners = [0,0,0,0,-h,-h,-h,-h];
-    #y_corners = [h/2,h/2,h/2,h/2,-h/2,-h/2,-h/2,-h/2]
-    z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2];
-    
-    # rotate and translate 3d bounding box
-    corners_3d = np.dot(R, np.vstack([x_corners,y_corners,z_corners]))
-    #print corners_3d.shape
-    corners_3d[0,:] = corners_3d[0,:] + obj.pos[0];
-    corners_3d[1,:] = corners_3d[1,:] + obj.pos[1];
-    corners_3d[2,:] = corners_3d[2,:] + obj.pos[2];
-    
-    return np.transpose(corners_3d)
-    
-    
-if __name__ == '__main__':
-    from lib.datasets.kitti import KITTI
-    cfg = {'random_flip':0.0, 'random_crop':0.0, 'scale':0.4, 'shift':0.1}
-    dataset = KITTI('../../data', 'train', cfg)
-
-    # calib testing
-    # we project center fo 3D objects to image plane
-    index = 1
-    calib = dataset.get_calib(index)
-    objects = dataset.get_label(index)
-    for object in objects:
-        print(object.to_kitti_format())
-        object.pos[0] *= 1
-        center_3d = object.pos + [0, -object.h/2, 0]   # real 3D center
-        center_3d = center_3d.reshape(-1, 3)   #(N, 3)
-        center_3d_projected, depth = calib.rect_to_img(center_3d)
-        box2d = object.box2d
-        center_2d = [(box2d[0]+box2d[2])/2, (box2d[1]+box2d[3])/2]
-        print ('3D center/2D center/projected 3D center:', center_3d, center_2d, center_3d_projected)
-        print('alpha ---> ry ', object.alpha, calib.alpha2ry(object.alpha, center_2d[0]))
-        break

@@ -1,4 +1,5 @@
 import os
+import cv2
 import numpy as np
 import torch
 import torch.utils.data as data
@@ -10,11 +11,10 @@ from lib.datasets.utils import angle2class
 from lib.datasets.utils import gaussian_radius
 from lib.datasets.utils import draw_umich_gaussian
 from lib.datasets.utils import get_angle_from_box3d,check_range
-from lib.datasets.kitti_utils import get_objects_from_label
+from lib.datasets.kitti_utils import draw_box_3d, get_objects_from_label
 from lib.datasets.kitti_utils import Calibration
 from lib.datasets.kitti_utils import get_affine_transform
 from lib.datasets.kitti_utils import affine_transform
-from lib.datasets.kitti_utils import compute_box_3d
 import pdb
 
 class KITTI(data.Dataset):
@@ -27,20 +27,17 @@ class KITTI(data.Dataset):
         self.resolution = np.array(cfg['resolution'])  # W * H
         self.use_3d_center = cfg['use_3d_center']
         self.writelist = cfg['writelist']
+        self.demo = False
         if cfg['class_merging']:
             self.writelist.extend(['Van', 'Truck'])
         if cfg['use_dontcare']:
             self.writelist.extend(['DontCare'])
-        '''    
-        ['Car': np.array([3.88311640418,1.62856739989,1.52563191462]),
-         'Pedestrian': np.array([0.84422524,0.66068622,1.76255119]),
-         'Cyclist': np.array([1.76282397,0.59706367,1.73698127])] 
-        ''' 
+
         ##l,w,h
-        self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
-                                       [1.52563191462 ,1.62856739989, 3.88311640418],
-                                       [1.73698127    ,0.59706367   , 1.76282397   ]])                              
-                              
+        self.cls_mean_size = np.array([[1.59624921, 0.47972058, 0.46641969],
+                                       [1.28877281, 1.69392866, 4.25668836],
+                                       [1.4376054,  0.48926293, 1.5239355 ]])
+        
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
         self.split = split
@@ -51,6 +48,7 @@ class KITTI(data.Dataset):
         self.data_dir = os.path.join(root_dir, 'testing' if split == 'test' else 'training')
         self.image_dir = os.path.join(self.data_dir, 'image_2')
         self.depth_dir = os.path.join(self.data_dir, 'depth')
+        self.denorm_dir = os.path.join(self.data_dir, 'denorm')
         self.calib_dir = os.path.join(self.data_dir, 'calib')
         self.label_dir = os.path.join(self.data_dir, 'label_2')
 
@@ -71,7 +69,12 @@ class KITTI(data.Dataset):
     def get_image(self, idx):
         img_file = os.path.join(self.image_dir, '%06d.png' % idx)
         assert os.path.exists(img_file)
-        return Image.open(img_file)    # (H, W, 3) RGB mode
+        return Image.open(img_file)      # (H, W, 3) RGB mode
+    
+    def get_depth(self, idx):
+        depth_file = os.path.join(self.depth_dir, '%06d.jpg' % idx)
+        assert os.path.exists(depth_file)
+        return cv2.imread(depth_file)    # (H, W, 3)
 
     def get_label(self, idx):
         label_file = os.path.join(self.label_dir, '%06d.txt' % idx)
@@ -82,6 +85,14 @@ class KITTI(data.Dataset):
         calib_file = os.path.join(self.calib_dir, '%06d.txt' % idx)
         assert os.path.exists(calib_file)
         return Calibration(calib_file)
+    
+    def get_denorm(self, idx):
+        denorm_file = os.path.join(self.denorm_dir, '%06d.txt' % idx)
+        assert os.path.exists(denorm_file)
+        with open(denorm_file, 'r') as f:
+            lines = f.readlines()
+        denorm = np.array([float(item) for item in lines[0].split(' ')])
+        return denorm
 
     def __len__(self):
         return self.idx_list.__len__()
@@ -114,13 +125,17 @@ class KITTI(data.Dataset):
                             method=Image.AFFINE,
                             data=tuple(trans_inv.reshape(-1).tolist()),
                             resample=Image.BILINEAR)
-        coord_range = np.array([center-crop_size/2,center+crop_size/2]).astype(np.float32)                   
+        coord_range = np.array([center-crop_size/2,center+crop_size/2]).astype(np.float32)  
+        calib = self.get_calib(index)
+        if self.demo:    
+            demo_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)    
+            denorm = self.get_denorm(index)
+            
         # image encoding
         img = np.array(img).astype(np.float32) / 255.0
         img = (img - self.mean) / self.std
         img = img.transpose(2, 0, 1)  # C * H * W
 
-        calib = self.get_calib(index)
         features_size = self.resolution // self.downsample# W * H
         #  ============================   get labels   ==============================
         if self.split in ['train']:
@@ -175,7 +190,20 @@ class KITTI(data.Dataset):
                 center_3d = center_3d[0]  # shape adjustment
                 center_3d = affine_transform(center_3d.reshape(-1), trans)
                 center_3d /= self.downsample      
-            
+                
+                if self.demo:
+                    _, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
+                    pts_img, _ = calib.rect_to_img(corners3d)
+                    pts_img[0, :] = affine_transform(pts_img[0, :], trans)
+                    pts_img[1, :] = affine_transform(pts_img[1, :], trans)
+                    pts_img[2, :] = affine_transform(pts_img[2, :], trans)
+                    pts_img[3, :] = affine_transform(pts_img[3, :], trans)
+                    pts_img[4, :] = affine_transform(pts_img[4, :], trans)
+                    pts_img[5, :] = affine_transform(pts_img[5, :], trans)
+                    pts_img[6, :] = affine_transform(pts_img[6, :], trans)
+                    pts_img[7, :] = affine_transform(pts_img[7, :], trans)
+                    demo_img = draw_box_3d(demo_img, pts_img)
+
                 # generate the center of gaussian heatmap [optional: 3d center or 2d center]
                 center_heatmap = center_3d.astype(np.int32) if self.use_3d_center else center_2d.astype(np.int32)
                 if center_heatmap[0] < 0 or center_heatmap[0] >= features_size[0]: continue
@@ -205,8 +233,7 @@ class KITTI(data.Dataset):
                 # encoding heading angle
                 # heading_angle = objects[i].alpha
                 # heading_angle = calib.ry2alpha(objects[i].ry, (objects[i].box2d[0]+objects[i].box2d[2])/2)
-                ry = objects[i].ry - 2 * np.pi if objects[i].ry > np.pi else objects[i].ry
-                heading_angle = calib.roty2alpha(ry, objects[i].pos)
+                heading_angle = calib.roty2alpha(objects[i].ry, objects[i].pos)
                 # print("heading_angle ----------- roty :", heading_angle, objects[i].ry)
                 if heading_angle > np.pi:  heading_angle -= 2 * np.pi  # check range
                 if heading_angle < -np.pi: heading_angle += 2 * np.pi
@@ -221,6 +248,11 @@ class KITTI(data.Dataset):
                 #objects[i].trucation <=0.5 and objects[i].occlusion<=2 and (objects[i].box2d[3]-objects[i].box2d[1])>=25:
                 if objects[i].trucation <=0.5 and objects[i].occlusion<=2:    
                     mask_2d[i] = 1           
+            
+            if self.demo:
+                os.makedirs("debug", exist_ok=True)
+                cv2.imwrite(os.path.join("debug", str(index) + ".jpg"), demo_img)
+            
             targets = {'depth': depth,
                    'size_2d': size_2d,
                    'heatmap': heatmap,
