@@ -90,7 +90,8 @@ def extract_dets_from_outputs(outputs, K=50):
     ys3d = ys3d.view(batch, K, 1)
 
     size_2d = _transpose_and_gather_feat(size_2d, inds)
-    size_2d = size_2d.view(batch, K, 2)
+    size_2d = size_2d.view(batch, K, 3)
+    size_2d = size_2d[:,:,:2]
 
     detections = torch.cat([cls_ids, scores, xs2d, ys2d, size_2d, depth, heading, size_3d, xs3d, ys3d], dim=2)
 

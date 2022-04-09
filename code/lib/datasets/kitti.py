@@ -21,7 +21,7 @@ class KITTI(data.Dataset):
     def __init__(self, root_dir, split, cfg):
         # basic configuration
         self.num_classes = 3
-        self.max_objs = 100
+        self.max_objs = 50
         self.class_name = ['Pedestrian', 'Car', 'Cyclist']
         self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
         self.resolution = np.array(cfg['resolution'])  # W * H
@@ -33,10 +33,15 @@ class KITTI(data.Dataset):
         if cfg['use_dontcare']:
             self.writelist.extend(['DontCare'])
 
-        ##l,w,h
+        # h w l
+        '''
         self.cls_mean_size = np.array([[1.59624921, 0.47972058, 0.46641969],
                                        [1.28877281, 1.69392866, 4.25668836],
                                        [1.4376054,  0.48926293, 1.5239355 ]])
+        '''
+        self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
+                                       [1.52563191462 ,1.62856739989, 3.88311640418],
+                                       [1.73698127    ,0.59706367   , 1.76282397   ]])                              
         
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
@@ -112,7 +117,6 @@ class KITTI(data.Dataset):
             if np.random.random() < self.random_flip:
                 random_flip_flag = True
                 img = img.transpose(Image.FLIP_LEFT_RIGHT)
-
             if np.random.random() < self.random_crop:
                 random_crop_flag = True
                 crop_size = img_size * np.clip(np.random.randn()*self.scale + 1, 1 - self.scale, 1 + self.scale)
@@ -127,6 +131,8 @@ class KITTI(data.Dataset):
                             resample=Image.BILINEAR)
         coord_range = np.array([center-crop_size/2,center+crop_size/2]).astype(np.float32)  
         calib = self.get_calib(index)
+        
+        ''' demo '''
         if self.demo:    
             demo_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)    
             denorm = self.get_denorm(index)
@@ -152,7 +158,7 @@ class KITTI(data.Dataset):
                     if object.ry < -np.pi: object.ry += 2 * np.pi
             # labels encoding
             heatmap = np.zeros((self.num_classes, features_size[1], features_size[0]), dtype=np.float32) # C * H * W
-            size_2d = np.zeros((self.max_objs, 2), dtype=np.float32)
+            size_2d = np.zeros((self.max_objs, 3), dtype=np.float32)
             offset_2d = np.zeros((self.max_objs, 2), dtype=np.float32)
             depth = np.zeros((self.max_objs, 1), dtype=np.float32)
             heading_bin = np.zeros((self.max_objs, 1), dtype=np.int64)
@@ -185,14 +191,29 @@ class KITTI(data.Dataset):
                 # process 3d bbox & get 3d center
                 center_2d = np.array([(bbox_2d[0] + bbox_2d[2]) / 2, (bbox_2d[1] + bbox_2d[3]) / 2], dtype=np.float32)  # W * H
                 center_3d = objects[i].pos + [0, -objects[i].h / 2, 0]  # real 3D center in 3D space
+                # center_3d, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
                 center_3d = affine_transform(center_3d.reshape(-1), trans)
                 center_3d /= self.downsample      
                 
+                ''' demo '''
                 if self.demo:
-                    _, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
+                    center_3d_1 = objects[i].pos + [0, -objects[i].h / 2, 0]  # real 3D center in 3D space
+                    center_3d_1 = center_3d_1.reshape(-1, 3)  # shape adjustment (N, 3)
+                    center_3d_1, _ = calib.rect_to_img(center_3d_1)  # project 3D center to image plane
+                    center_3d_1 = center_3d_1[0]  # shape adjustment
+                    center_3d_1 = affine_transform(center_3d_1.reshape(-1), trans)
+                    
+                    center_3d_2, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
+                    center_3d_2 = center_3d_2.reshape(-1, 3)  # shape adjustment (N, 3)
+                    center_3d_2, _ = calib.rect_to_img(center_3d_2)  # project 3D center to image plane
+                    center_3d_2 = center_3d_2[0]  # shape adjustment
+                    center_3d_2 = affine_transform(center_3d_2.reshape(-1), trans)           
+                    demo_img = cv2.circle(demo_img, (int(center_3d_1[0]), int(center_3d_1[1])), 2, (255, 0, 0), 2)
+                    demo_img = cv2.circle(demo_img, (int(center_3d_2[0]), int(center_3d_2[1])), 2, (0, 255, 0), 2)
+
                     pts_img, _ = calib.rect_to_img(corners3d)
                     pts_img[0, :] = affine_transform(pts_img[0, :], trans)
                     pts_img[1, :] = affine_transform(pts_img[1, :], trans)
@@ -221,11 +242,15 @@ class KITTI(data.Dataset):
                 cls_id = self.cls2id[objects[i].cls_type]
                 cls_ids[i] = cls_id
                 draw_umich_gaussian(heatmap[cls_id], center_heatmap, radius)
+                
+                ''' encoding diameter '''
+                dia_3d = np.sqrt(objects[i].w**2 + objects[i].l**2)
+                dia_2d = calib.fu * dia_3d / objects[i].pos[-1]
     
                 # encoding 2d/3d offset & 2d size
                 indices[i] = center_heatmap[1] * features_size[0] + center_heatmap[0]
                 offset_2d[i] = center_2d - center_heatmap
-                size_2d[i] = 1. * w, 1. * h
+                size_2d[i] = 1. * w, 1. * h, dia_2d
     
                 # encoding depth
                 depth[i] = objects[i].pos[-1]
@@ -249,6 +274,7 @@ class KITTI(data.Dataset):
                 if objects[i].trucation <=0.5 and objects[i].occlusion<=2:    
                     mask_2d[i] = 1           
             
+            ''' demo '''
             if self.demo:
                 os.makedirs("debug", exist_ok=True)
                 cv2.imwrite(os.path.join("debug", str(index) + ".jpg"), demo_img)

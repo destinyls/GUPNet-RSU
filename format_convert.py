@@ -2,19 +2,23 @@ import os
 import sys
 import argparse
 import cv2
+import random
 
 import numpy as np
 
 from shutil import copyfile
 from tqdm import tqdm
 
-category_map = {'car': 'Car', 'van': 'Van', 'truck': 'Truck', 'bus': 'Bus', 'pedestrian': 'Pedestrian', 'cyclist': 'Cyclist', 'motorcyclist': 'Motorcyclist', 'tricyclist': 'Tricyclist', 'trafficcone': 'Trafficcone', 'unknown_unmovable': 'Unknown_unmovable', 'barrow': 'Barrow', 'unknowns_movable': 'Unknowns_movable', 'triangle plate': 'Triangle plate'}
+fine_category_map = {'car': 'Car', 'van': 'Van', 'truck': 'Truck', 'bus': 'Bus', 'pedestrian': 'Pedestrian', 'cyclist': 'Cyclist', 'motorcyclist': 'Motorcyclist', 'tricyclist': 'Tricyclist', 'trafficcone': 'Trafficcone', 'unknown_unmovable': 'Unknown_unmovable', 'barrow': 'Barrow', 'unknowns_movable': 'Unknowns_movable', 'triangle plate': 'Triangle plate'}
+coarse_category_map = {'car': 'Car', 'van': 'Car', 'truck': 'Bus', 'bus': 'Bus', 'pedestrian': 'Pedestrian', 'cyclist': 'Cyclist', 'motorcyclist': 'Cyclist', 'tricyclist': 'Cyclist', 'barrow': 'Cyclist', 'trafficcone': 'Misc', 'unknown_unmovable': 'Misc', 'unknowns_movable': 'Misc', 'triangle plate': 'Misc'}
 
 def parse_option():
     parser = argparse.ArgumentParser('Convert rope3D dataset to standard kitti format', add_help=False)
     parser.add_argument('--src_root', type=str, required=False, metavar="", help='root path to rope3d dataset')
     parser.add_argument('--dest_root', type=str, required=False, metavar="", help='root path to rope3d dataset in kitti format')
     parser.add_argument('--split', type=str, default='train', help='split: train or val',)
+    parser.add_argument('--cls_level', type=str, default='coarse', help='category level',)
+
     args = parser.parse_args()
     return args
     
@@ -68,15 +72,18 @@ def alpha2roty(alpha, pos):
         ry += 2 * np.pi
     return ry
  
-def convert_label(src_label_file, dest_label_file):
+def convert_label(src_label_file, dest_label_file, cls_level):
     with open(src_label_file, 'r') as f:
         lines = f.readlines()
     new_lines = []
     for line in lines:
         label = line.strip().split(' ')
         cls_type = label[0]
-        label[0] = category_map[cls_type]
-        if cls_type not in ['car', 'pedestrian', 'cyclist', 'van', 'truck', 'bus', 'motorcyclist', 'tricyclist']:
+        if cls_level == 'coarse':
+            label[0] = coarse_category_map[cls_type]
+        else:
+            label[0] = fine_category_map[cls_type]
+        if cls_type not in ['car', 'pedestrian', 'cyclist', 'van', 'truck', 'bus', 'motorcyclist', 'tricyclist', 'barrow']:
             continue
         
         truncated = int(label[1])
@@ -99,7 +106,7 @@ def convert_label(src_label_file, dest_label_file):
             f.write(line)
             f.write("\n")
             
-def main(src_root, dest_root, split='train'):
+def main(src_root, dest_root, split, cls_level):
     if split == 'train':
         src_dir = os.path.join(src_root, "training")
         dest_dir = os.path.join(dest_root, "training")
@@ -134,7 +141,7 @@ def main(src_root, dest_root, split='train'):
         img_file = os.path.join(src_img_path, index + ".jpg")
         if os.path.exists(img_file):
             idx_list_valid.append(index)
-            
+
     img_id = 0
     img_id_list = []
     for index in tqdm(idx_list_valid):
@@ -159,21 +166,35 @@ def main(src_root, dest_root, split='train'):
         # calib
         convert_calib(src_calib_file, dest_calib_file)
         # label
-        convert_label(src_label_file, dest_label_file)
+        convert_label(src_label_file, dest_label_file, cls_level)
         # depth
         copy_file(src_depth_img_file, dest_depth_img_file)
         # denorm
         copy_file(src_denorm_file, dest_denorm_file)
 
-    with open(imageset_txt,'w') as f:
-        for idx in img_id_list:
-            frame_name = "{:06d}".format(idx)
-            f.write(frame_name)
-            f.write("\n")
+    if 'train' in imageset_txt:
+        random.shuffle(img_id_list)
+        train_list = img_id_list[:int(0.8*len(img_id_list))]
+        val_list = img_id_list[int(0.8*len(img_id_list)):]
+        with open(imageset_txt,'w') as f:
+            for idx in train_list:
+                frame_name = "{:06d}".format(idx)
+                f.write(frame_name)
+                f.write("\n")
+        with open(imageset_txt.replace("train", "val"),'w') as f:
+            for idx in val_list:
+                frame_name = "{:06d}".format(idx)
+                f.write(frame_name)
+                f.write("\n")
+    else:
+        test_list = img_id_list
+        with open(imageset_txt,'w') as f:
+            for idx in test_list:
+                frame_name = "{:06d}".format(idx)
+                f.write(frame_name)
+                f.write("\n")
 
 if __name__ == "__main__":
     args = parse_option()
-    src_root, dest_root, split = args.src_root, args.dest_root, args.split
-    main(src_root, dest_root, split)
-    
-        
+    src_root, dest_root, split, cls_level = args.src_root, args.dest_root, args.split, args.cls_level
+    main(src_root, dest_root, split, cls_level)

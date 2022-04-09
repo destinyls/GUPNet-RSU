@@ -90,7 +90,6 @@ class GupnetLoss(nn.Module):
         offset2d_target = extract_target_from_tensor(target['offset_2d'], target['mask_2d'])
         offset2d_loss = F.l1_loss(offset2d_input, offset2d_target, reduction='mean')
 
-
         loss = offset2d_loss + size2d_loss   
         self.stat['offset2d_loss'] = offset2d_loss
         self.stat['size2d_loss'] = size2d_loss
@@ -98,7 +97,6 @@ class GupnetLoss(nn.Module):
 
 
     def compute_bbox3d_loss(self, input, target, mask_type = 'mask_2d'):
-        
         # compute depth loss        
         depth_input = input['depth'][input['train_tag']] 
         depth_input, depth_log_variance = depth_input[:, 0:1], depth_input[:, 1:2]
@@ -109,14 +107,17 @@ class GupnetLoss(nn.Module):
         offset3d_input = input['offset_3d'][input['train_tag']]  
         offset3d_target = extract_target_from_tensor(target['offset_3d'], target[mask_type])
         offset3d_loss = F.l1_loss(offset3d_input, offset3d_target, reduction='mean')
-        
+
         # compute size3d loss
         size3d_input = input['size_3d'][input['train_tag']] 
         size3d_target = extract_target_from_tensor(target['size_3d'], target[mask_type])
-        size3d_loss = F.l1_loss(size3d_input[:,1:], size3d_target[:,1:], reduction='mean')*2/3+\
-               laplacian_aleatoric_uncertainty_loss(size3d_input[:,0:1], size3d_target[:,0:1], input['h3d_log_variance'][input['train_tag']])/3
-        #size3d_loss = F.l1_loss(size3d_input[:,1:], size3d_target[:,1:], reduction='mean')+\
-        #       laplacian_aleatoric_uncertainty_loss(size3d_input[:,0:1], size3d_target[:,0:1], input['h3d_log_variance'][input['train_tag']])
+        
+        ''' geometry '''
+        size3d_loss = F.l1_loss(size3d_input[:,:1], size3d_target[:,:1], reduction='mean')*2/3+\
+                laplacian_aleatoric_uncertainty_loss(size3d_input[:,1:], size3d_target[:,1:], input['dia3d_log_variance'][input['train_tag']]) / 3
+        # size3d_loss = F.l1_loss(size3d_input[:,1:], size3d_target[:,1:], reduction='mean')*2/3+\
+        #       laplacian_aleatoric_uncertainty_loss(size3d_input[:,0], size3d_target[:,0], input['dia3d_log_variance'][input['train_tag']]) / 3
+        
         # compute heading loss
         heading_loss = compute_heading_loss(input['heading'][input['train_tag']] ,
                                             target[mask_type],  ## NOTE
@@ -128,8 +129,6 @@ class GupnetLoss(nn.Module):
         self.stat['offset3d_loss'] = offset3d_loss
         self.stat['size3d_loss'] = size3d_loss
         self.stat['heading_loss'] = heading_loss
-        
-        
         return loss
 
 
