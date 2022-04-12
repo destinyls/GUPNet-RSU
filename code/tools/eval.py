@@ -30,7 +30,7 @@ if __name__ == "__main__":
     cfg_train = cfg['trainer']
     logger = create_logger(os.path.join(cfg_train['log_dir'],'train.log'))    
 
-    gt_label_path = os.path.join(cfg['dataset']['root_dir'], 'testing', 'label_2')
+    gt_label_path = os.path.join(cfg['dataset']['root_dir'], 'training', 'label_2')
     imageset_txt = os.path.join(cfg['dataset']['root_dir'], 'ImageSets', 'val.txt')
     pred_label_path = os.path.join(cfg_train['output_dir'], 'data')
     os.makedirs(pred_label_path, exist_ok=True)
