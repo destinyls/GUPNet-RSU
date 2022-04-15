@@ -49,7 +49,7 @@ def main():
 
     # build model
     ckpt = args.ckpt if args.ckpt is not '' else None
-    model = build_model(cfg['model'], train_loader.dataset.cls_mean_size, ckpt=ckpt)
+    model = build_model(cfg['model'], train_loader.dataset.cls_mean_size, train_loader.dataset.cls_mean_ref, ckpt=ckpt)
 
     # evaluation mode
     if args.evaluate:
@@ -77,7 +77,6 @@ def main():
     trainer.train()
     tester = Tester(cfg['tester'], model, val_loader, logger)
     tester.test()
-
 
 if __name__ == '__main__':
     main()

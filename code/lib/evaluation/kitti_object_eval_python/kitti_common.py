@@ -310,23 +310,22 @@ def get_label_anno(label_path):
         content = []
     else:
         content = [line.strip().split(' ') for line in lines]
-
     annotations['name'] = np.array([x[0] for x in content])
-    annotations['truncated'] = np.array([float(x[1]) for x in content])
+    annotations['truncated'] = np.array([round(float(x[1]), 2) for x in content])
     annotations['occluded'] = np.array([int(x[2]) for x in content])
-    annotations['alpha'] = np.array([float(x[3]) for x in content])
+    annotations['alpha'] = np.array([round(float(x[3]), 2) for x in content])
     annotations['bbox'] = np.array(
-        [[float(info) for info in x[4:8]] for x in content]).reshape(-1, 4)
+        [[round(float(info), 2) for info in x[4:8]] for x in content]).reshape(-1, 4)
     # dimensions will convert hwl format to standard lhw(camera) format.
     annotations['dimensions'] = np.array(
-        [[float(info) for info in x[8:11]] for x in content]).reshape(
+        [[round(float(info), 2) for info in x[8:11]] for x in content]).reshape(
             -1, 3)[:, [2, 0, 1]]
     annotations['location'] = np.array(
-        [[float(info) for info in x[11:14]] for x in content]).reshape(-1, 3)
+        [[round(float(info), 2) for info in x[11:14]] for x in content]).reshape(-1, 3)
     annotations['rotation_y'] = np.array(
-        [float(x[14]) for x in content]).reshape(-1)
+        [round(float(x[14]), 2) for x in content]).reshape(-1)
     if len(content) != 0 and len(content[0]) == 16:  # have score
-        annotations['score'] = np.array([float(x[15]) for x in content])
+        annotations['score'] = np.array([round(float(x[15]), 2) for x in content])
     else:
         annotations['score'] = np.zeros([len(annotations['bbox'])])
     return annotations
@@ -411,4 +410,4 @@ def iou(boxes1, boxes2, add1=False):
     union = np.expand_dims(
         area1, axis=1) + np.expand_dims(
             area2, axis=0) - intersect
-    return intersect / union
+    return intersect / (union + 10e-9)

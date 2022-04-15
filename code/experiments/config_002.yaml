@@ -35,7 +35,7 @@ trainer:
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   log_dir: 'log'
-  output_dir: "outputs/eval_metrics_R40_ResNet18_KITTI_003nd"
+  output_dir: "outputs/eval_metrics_R40_ResNet18_KITTI_Ref_H_Box2d_Height_H3D_002nd"
   #resume_model: '...'  
 tester:
   threshold: 0.2  # confidence filter

@@ -1,8 +1,8 @@
 from lib.models.gupnet import GUPNet
 
 
-def build_model(cfg, mean_size, ckpt=None):
+def build_model(cfg, mean_size, mean_ref, ckpt=None):
     if cfg['type'] == 'gupnet':
-        return GUPNet(backbone=cfg['backbone'], neck=cfg['neck'], mean_size=mean_size, ckpt=ckpt)
+        return GUPNet(backbone=cfg['backbone'], neck=cfg['neck'], mean_size=mean_size, mean_ref=mean_ref, ckpt=ckpt)
     else:
         raise NotImplementedError("%s model is not supported" % cfg['type'])

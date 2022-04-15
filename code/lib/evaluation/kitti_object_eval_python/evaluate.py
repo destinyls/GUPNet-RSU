@@ -5,6 +5,8 @@ import fire
 from . import kitti_common as kitti
 
 import csv
+# from mmdet3d.core.evaluation.kitti_utils.eval import kitti_eval
+
 
 def _read_imageset_file(path):
     with open(path, 'r') as f:

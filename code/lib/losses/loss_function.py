@@ -20,6 +20,7 @@ class Hierarchical_Task_Learning:
                            'size3d_loss':['size2d_loss','offset2d_loss'], 
                            'heading_loss':['size2d_loss','offset2d_loss'], 
                            'depth_loss':['size2d_loss','size3d_loss','offset2d_loss']}                                 
+    
     def compute_weight(self,current_loss,epoch):
         T=140
         #compute initial weights
@@ -81,19 +82,24 @@ class GupnetLoss(nn.Module):
 
     def compute_bbox2d_loss(self, input, target):
         # compute size2d loss
-        
         size2d_input = extract_input_from_tensor(input['size_2d'], target['indices'], target['mask_2d'])
         size2d_target = extract_target_from_tensor(target['size_2d'], target['mask_2d'])
         size2d_loss = F.l1_loss(size2d_input, size2d_target, reduction='mean')
+        
         # compute offset2d loss
         offset2d_input = extract_input_from_tensor(input['offset_2d'], target['indices'], target['mask_2d'])
         offset2d_target = extract_target_from_tensor(target['offset_2d'], target['mask_2d'])
         offset2d_loss = F.l1_loss(offset2d_input, offset2d_target, reduction='mean')
-
-
-        loss = offset2d_loss + size2d_loss   
+        
+        # ref_2d loss
+        ref2d_input = extract_input_from_tensor(input['ref_2d'], target['indices'], target['mask_2d'])
+        ref2d_target = extract_target_from_tensor(target['ref_2d'], target['mask_2d'])
+        ref2d_loss = laplacian_aleatoric_uncertainty_loss(ref2d_input[:,0], ref2d_target, ref2d_input[:, 1])
+        
+        loss = offset2d_loss + size2d_loss + 0.5 * ref2d_loss
         self.stat['offset2d_loss'] = offset2d_loss
-        self.stat['size2d_loss'] = size2d_loss
+        self.stat['size2d_loss'] = size2d_loss + ref2d_loss * 0.5
+        # self.stat['ref2d_loss'] = ref2d_loss * 0.5
         return loss
 
 
@@ -110,26 +116,29 @@ class GupnetLoss(nn.Module):
         offset3d_target = extract_target_from_tensor(target['offset_3d'], target[mask_type])
         offset3d_loss = F.l1_loss(offset3d_input, offset3d_target, reduction='mean')
         
+        # compute ref3d loss
+        ref3d_input = input['ref_3d'][input['train_tag']]
+        ref3d_target = extract_target_from_tensor(target['ref_3d'], target[mask_type])
+        ref3d_loss = laplacian_aleatoric_uncertainty_loss(ref3d_input, ref3d_target, input['ref3d_log_std'][input['train_tag']])
+
         # compute size3d loss
         size3d_input = input['size_3d'][input['train_tag']] 
-        size3d_target = extract_target_from_tensor(target['size_3d'], target[mask_type])
+        size3d_target = extract_target_from_tensor(target['size_3d'], target[mask_type])        
         size3d_loss = F.l1_loss(size3d_input[:,1:], size3d_target[:,1:], reduction='mean')*2/3+\
-               laplacian_aleatoric_uncertainty_loss(size3d_input[:,0:1], size3d_target[:,0:1], input['h3d_log_variance'][input['train_tag']])/3
-        #size3d_loss = F.l1_loss(size3d_input[:,1:], size3d_target[:,1:], reduction='mean')+\
-        #       laplacian_aleatoric_uncertainty_loss(size3d_input[:,0:1], size3d_target[:,0:1], input['h3d_log_variance'][input['train_tag']])
-        # compute heading loss
+               laplacian_aleatoric_uncertainty_loss(size3d_input[:,0:1], size3d_target[:,0:1], input['h3d_log_std'][input['train_tag']])/3
+
         heading_loss = compute_heading_loss(input['heading'][input['train_tag']] ,
                                             target[mask_type],  ## NOTE
                                             target['heading_bin'],
                                             target['heading_res'])
-        loss = depth_loss + offset3d_loss + size3d_loss + heading_loss
+        
+        loss = depth_loss + offset3d_loss + size3d_loss + heading_loss + ref3d_loss
         
         self.stat['depth_loss'] = depth_loss
         self.stat['offset3d_loss'] = offset3d_loss
-        self.stat['size3d_loss'] = size3d_loss
+        self.stat['size3d_loss'] = size3d_loss + ref3d_loss
         self.stat['heading_loss'] = heading_loss
-        
-        
+        # self.stat['ref3d_loss'] = ref3d_loss
         return loss
 
 

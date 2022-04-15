@@ -22,7 +22,5 @@ def gaussian_aleatoric_uncertainty_loss(input, target, log_variance, reduction='
     loss = 0.5 * torch.exp(-log_variance) * torch.abs(input - target)**2 + 0.5 * log_variance
     return loss.mean() if reduction == 'mean' else loss.sum()
 
-
-
 if __name__ == '__main__':
     pass

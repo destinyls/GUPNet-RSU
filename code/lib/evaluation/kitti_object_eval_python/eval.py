@@ -1,8 +1,11 @@
 import io as sysio
 import pdb
+import torch
 import numba
 import numpy as np
 from .rotate_iou import rotate_iou_gpu_eval
+# from mmdet3d.core.bbox.iou_calculators.iou3d_calculator import BboxOverlaps3D
+# iou_calculator = BboxOverlaps3D(coordinate="camera")
 
 @numba.jit
 def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
@@ -21,7 +24,7 @@ def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
             continue
         # recall = l_recall
         thresholds.append(score)
-        current_recall += 1 / (num_sample_pts - 1.0)
+        current_recall += 1 / (num_sample_pts - 1.0 + 10e-9)
     return thresholds
 
 
@@ -107,7 +110,7 @@ def image_box_overlap(boxes, query_boxes, criterion=-1):
                         ua = qbox_area
                     else:
                         ua = 1.0
-                    overlaps[n, k] = iw * ih / ua
+                    overlaps[n, k] = iw * ih / (ua + 10e-9)
     return overlaps
 
 
@@ -140,7 +143,7 @@ def d3_box_overlap_kernel(boxes, qboxes, rinc, criterion=-1):
                         ua = area2
                     else:
                         ua = inc
-                    rinc[i, j] = inc / ua
+                    rinc[i, j] = inc / (ua + 10e-9)
                 else:
                     rinc[i, j] = 0.0
 
@@ -351,7 +354,6 @@ def calculate_iou_partly(gt_annos, dt_annos, metric, num_parts=50):
     split_parts = get_split_parts(num_examples, num_parts)
     parted_overlaps = []
     example_idx = 0
-
     for num_part in split_parts:
         gt_annos_part = gt_annos[example_idx:example_idx + num_part]
         dt_annos_part = dt_annos[example_idx:example_idx + num_part]
@@ -387,8 +389,12 @@ def calculate_iou_partly(gt_annos, dt_annos, metric, num_parts=50):
             rots = np.concatenate([a["rotation_y"] for a in dt_annos_part], 0)
             dt_boxes = np.concatenate(
                 [loc, dims, rots[..., np.newaxis]], axis=1)
-            overlap_part = d3_box_overlap(gt_boxes, dt_boxes).astype(
-                np.float64)
+            
+            # bbox_ious_3d = iou_calculator(torch.tensor(gt_boxes), torch.tensor(dt_boxes), "iou")
+            # bbox_ious_3d = bbox_ious_3d.numpy()
+            overlap_part = d3_box_overlap(gt_boxes, dt_boxes).astype(np.float64)
+
+
         else:
             raise ValueError("unknown metric")
         parted_overlaps.append(overlap_part)
@@ -467,8 +473,8 @@ def eval_class(gt_annos,
     assert len(gt_annos) == len(dt_annos)
     num_examples = len(gt_annos)
     split_parts = get_split_parts(num_examples, num_parts)
-
     rets = calculate_iou_partly(dt_annos, gt_annos, metric, num_parts)
+
     overlaps, parted_overlaps, total_dt_num, total_gt_num = rets
     N_SAMPLE_PTS = 41
     num_minoverlap = len(min_overlaps)
@@ -548,6 +554,7 @@ def eval_class(gt_annos,
         "precision": precision,
         "orientation": aos,
     }
+
     return ret_dict
 
 
@@ -586,6 +593,7 @@ def do_eval(gt_annos,
     difficultys = [0, 1, 2]
     ret = eval_class(gt_annos, dt_annos, current_classes, difficultys, 0,
                      min_overlaps, compute_aos)
+
     # ret: [num_class, num_diff, num_minoverlap, num_sample_points]
     if metric == 'R40':
         get_mAP_fnc = get_mAP_R40
@@ -605,14 +613,12 @@ def do_eval(gt_annos,
 
         if PR_detail_dict is not None:
             PR_detail_dict['aos'] = ret['orientation']
-
     ret = eval_class(gt_annos, dt_annos, current_classes, difficultys, 1,
                      min_overlaps)
     mAP_bev = get_mAP_fnc(ret["precision"])
 
     if PR_detail_dict is not None:
         PR_detail_dict['bev'] = ret['precision']
-
     ret = eval_class(gt_annos, dt_annos, current_classes, difficultys, 2,
                      min_overlaps)
     mAP_3d = get_mAP_fnc(ret["precision"])
@@ -629,7 +635,7 @@ def do_coco_style_eval(gt_annos, dt_annos, current_classes, overlap_ranges,
     min_overlaps = np.zeros([10, *overlap_ranges.shape[1:]])
     for i in range(overlap_ranges.shape[1]):
         for j in range(overlap_ranges.shape[2]):
-            min_overlaps[:, i, j] = np.linspace(*overlap_ranges[:, i, j])
+            min_overlaps[:, i, j] = np.linspace(overlap_ranges[:, i, j][0], overlap_ranges[:, i, j][1], int(overlap_ranges[:, i, j][2]))
     mAP_bbox, mAP_bev, mAP_3d, mAP_aos = do_eval(
         gt_annos, dt_annos, current_classes, min_overlaps, compute_aos)
     # ret: [num_class, num_diff, num_minoverlap]
@@ -680,10 +686,8 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
             if anno['alpha'][0] != -10:
                 compute_aos = True
             break
-
     mAPbbox, mAPbev, mAP3d, mAPaos = do_eval(gt_annos, dt_annos, current_classes, 
                             min_overlaps, compute_aos, PR_detail_dict=PR_detail_dict, metric=metric)
-
     ret_dict = {}
     for j, curcls in enumerate(current_classes):
         # mAP threshold array: [num_minoverlap, metric, class]
@@ -763,6 +767,7 @@ def get_coco_eval_result(gt_annos, dt_annos, current_classes):
             if anno['alpha'][0] != -10:
                 compute_aos = True
             break
+        
     mAPbbox, mAPbev, mAP3d, mAPaos = do_coco_style_eval(
         gt_annos, dt_annos, current_classes, overlap_ranges, compute_aos)
     for j, curcls in enumerate(current_classes):

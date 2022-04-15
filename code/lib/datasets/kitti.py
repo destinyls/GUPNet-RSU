@@ -36,7 +36,13 @@ class KITTI(data.Dataset):
         ##l,w,h
         self.cls_mean_size = np.array([[1.59624921, 0.47972058, 0.46641969],
                                        [1.28877281, 1.69392866, 4.25668836],
-                                       [1.4376054,  0.48926293, 1.5239355 ]])
+                                       [1.4376054,  0.48926293, 1.5239355 ]])        
+        
+        cls_mean_ref = []
+        for i in range(self.cls_mean_size.shape[0]):
+            # cls_mean_ref.append(np.sqrt(self.cls_mean_size[i, 1]**2 + self.cls_mean_size[i, 2]**2))
+            cls_mean_ref.append(self.cls_mean_size[i, 0])
+        self.cls_mean_ref = np.array(cls_mean_ref)
         
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
@@ -165,6 +171,8 @@ class KITTI(data.Dataset):
             indices = np.zeros((self.max_objs), dtype=np.int64)
             mask_2d = np.zeros((self.max_objs), dtype=np.uint8)
             mask_3d = np.zeros((self.max_objs), dtype=np.uint8)
+            ref_3d = np.zeros((self.max_objs), dtype=np.float32)
+            ref_2d = np.zeros((self.max_objs), dtype=np.float32)
             object_num = len(objects) if len(objects) < self.max_objs else self.max_objs
             for i in range(object_num):
                 # filter objects by writelist
@@ -184,12 +192,12 @@ class KITTI(data.Dataset):
     
                 # process 3d bbox & get 3d center
                 center_2d = np.array([(bbox_2d[0] + bbox_2d[2]) / 2, (bbox_2d[1] + bbox_2d[3]) / 2], dtype=np.float32)  # W * H
-                center_3d = objects[i].pos + [0, -objects[i].h / 2, 0]  # real 3D center in 3D space
+                center_3d = objects[i].pos + [0, - objects[i].h / 2, 0]  # real 3D center in 3D space
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
                 center_3d = affine_transform(center_3d.reshape(-1), trans)
-                center_3d /= self.downsample      
+                center_3d /= self.downsample    
                 
                 if self.demo:
                     _, corners3d = objects[i].generate_corners3d_denorm(denorm)     # real 3D center in 3D space
@@ -229,7 +237,15 @@ class KITTI(data.Dataset):
     
                 # encoding depth
                 depth[i] = objects[i].pos[-1]
-    
+                
+                '''
+                ref_2d[i] = calib.fu * np.sqrt(objects[i].w**2 + objects[i].l**2) / objects[i].pos[-1]
+                mean_ref = self.cls_mean_ref[self.cls2id[objects[i].cls_type]]
+                ref_3d[i] = np.sqrt(objects[i].w**2 + objects[i].l**2) - mean_ref
+                '''
+                ref_2d[i] = calib.fu * objects[i].h / objects[i].pos[-1]
+                mean_ref = self.cls_mean_ref[self.cls2id[objects[i].cls_type]]
+                ref_3d[i] = objects[i].h - mean_ref
                 # encoding heading angle
                 # heading_angle = objects[i].alpha
                 # heading_angle = calib.ry2alpha(objects[i].ry, (objects[i].box2d[0]+objects[i].box2d[2])/2)
@@ -259,6 +275,8 @@ class KITTI(data.Dataset):
                    'offset_2d': offset_2d,
                    'indices': indices,
                    'size_3d': size_3d,
+                   'ref_2d': ref_2d,
+                   'ref_3d': ref_3d,
                    'offset_3d': offset_3d,
                    'heading_bin': heading_bin,
                    'heading_res': heading_res,

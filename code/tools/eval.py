@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     checkpoint_path = os.path.join(cfg_train['output_dir'], 'checkpoints')
     train_loader, val_loader, test_loader = build_dataloader(cfg['dataset'])
-    model = build_model(cfg['model'],train_loader.dataset.cls_mean_size)
+    model = build_model(cfg['model'], train_loader.dataset.cls_mean_size, train_loader.dataset.cls_mean_ref)
 
     best_mAP_3d_moderate = 0
     for pth_name in os.listdir(checkpoint_path):

@@ -151,7 +151,7 @@ def line_segment_intersection_v1(pts1, pts2, i, j, temp_pts):
 
     if area_cda * area_cdb >= 0:
         return False
-    t = area_cda / (area_abd - area_abc)
+    t = area_cda / (area_abd - area_abc + 10e-9) 
 
     dx = t * (b[0] - a[0])
     dy = t * (b[1] - a[1])
@@ -253,11 +253,11 @@ def devRotateIoUEval(rbox1, rbox2, criterion=-1):
     area2 = rbox2[2] * rbox2[3]
     area_inter = inter(rbox1, rbox2)
     if criterion == -1:
-        return area_inter / (area1 + area2 - area_inter)
+        return area_inter / (area1 + area2 - area_inter + 10e-9)
     elif criterion == 0:
-        return area_inter / area1
+        return area_inter / (area1 + 10e-9)
     elif criterion == 1:
-        return area_inter / area2
+        return area_inter / (area2 + 10e-9)
     else:
         return area_inter
 
@@ -294,6 +294,7 @@ def rotate_iou_kernel_eval(N, K, dev_boxes, dev_query_boxes, dev_iou, criterion=
             offset = row_start * threadsPerBlock * K + col_start * threadsPerBlock + tx * K + i
             dev_iou[offset] = devRotateIoUEval(block_qboxes[i * 5:i * 5 + 5],
                                            block_boxes[tx * 5:tx * 5 + 5], criterion)
+    
 
 def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
     """rotated box iou running in gpu. 500x faster than cpu version
@@ -323,6 +324,7 @@ def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
     blockspergrid = (div_up(N, threadsPerBlock), div_up(K, threadsPerBlock))
     
     stream = cuda.stream()
+    
     with stream.auto_synchronize():
         boxes_dev = cuda.to_device(boxes.reshape([-1]), stream)
         query_boxes_dev = cuda.to_device(query_boxes.reshape([-1]), stream)

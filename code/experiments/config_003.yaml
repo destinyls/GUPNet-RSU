@@ -2,7 +2,7 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../datasets/Rope3D-KITTI'
+  root_dir: '../datasets/KITTI'
   batch_size: 16
   class_merging: False
   use_dontcare: False
@@ -12,6 +12,7 @@ dataset:
   random_crop: 0.5
   scale: 0.4
   shift: 0.1
+  resolution: [1280, 384]
 
 model:
   type: 'gupnet'
@@ -34,7 +35,7 @@ trainer:
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   log_dir: 'log'
-  output_dir: "outputs/eval_metrics_R40_ResNet18_Rope3D_3_Class_001nd"
+  output_dir: "outputs/eval_metrics_R40_ResNet18_KITTI_Ref_003nd"
   #resume_model: '...'  
 tester:
   threshold: 0.2  # confidence filter
