@@ -81,7 +81,7 @@ def convert_label(src_label_file, dest_label_file):
         
         truncated = int(label[1])
         if truncated > 0:
-            truncated = 0.3
+            truncated = 0.0
         label[1] = str(truncated)
         
         alpha = float(label[3])
@@ -99,7 +99,7 @@ def convert_label(src_label_file, dest_label_file):
             f.write(line)
             f.write("\n")
             
-def main(src_root, dest_root, split='train'):
+def main(src_root, dest_root, split='train', img_id=0):
     if split == 'train':
         src_dir = os.path.join(src_root, "training")
         dest_dir = os.path.join(dest_root, "training")
@@ -107,7 +107,7 @@ def main(src_root, dest_root, split='train'):
         depth_img_path = "training-depth_2"
     else:
         src_dir = os.path.join(src_root, "validation")
-        dest_dir = os.path.join(dest_root, "testing")
+        dest_dir = os.path.join(dest_root, "training")
         img_path = "validation-image_2"
         depth_img_path = "validation-depth_2"
         
@@ -119,7 +119,7 @@ def main(src_root, dest_root, split='train'):
     os.makedirs(os.path.join(dest_dir, "denorm"), exist_ok=True)
 
     os.makedirs(os.path.join(dest_dir, "../", "ImageSets"), exist_ok=True)
-    imageset_txt = os.path.join(dest_dir, "../", "ImageSets", "train.txt" if split=='train' else 'test.txt')
+    imageset_txt = os.path.join(dest_dir, "../", "ImageSets", "train.txt" if split=='train' else 'val.txt')
     
     src_img_path = os.path.join(src_dir, "../", img_path)
     src_depth_img_path = os.path.join(src_dir, "../", depth_img_path)
@@ -135,7 +135,7 @@ def main(src_root, dest_root, split='train'):
         if os.path.exists(img_file):
             idx_list_valid.append(index)
             
-    img_id = 0
+    # img_id = 0
     img_id_list = []
     for index in tqdm(idx_list_valid):
         src_img_file = os.path.join(src_img_path, index + ".jpg")
@@ -170,10 +170,15 @@ def main(src_root, dest_root, split='train'):
             frame_name = "{:06d}".format(idx)
             f.write(frame_name)
             f.write("\n")
+            
+    return img_id
 
 if __name__ == "__main__":
     args = parse_option()
     src_root, dest_root, split = args.src_root, args.dest_root, args.split
-    main(src_root, dest_root, split)
+    img_id = main(src_root, dest_root, 'train')
+    img_id = main(src_root, dest_root, 'val', img_id)
+    
+    
     
         
